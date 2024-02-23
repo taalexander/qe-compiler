@@ -1543,13 +1543,25 @@ QUIRGenQASM3Visitor::handleAssign(const ASTBinaryOpNode *node,
 llvm::Expected<mlir::Value>
 QUIRGenQASM3Visitor::visitAndGetExpressionValue(const ASTExpressionNode *node) {
   // do not switch circuit here
-  BaseQASM3Visitor::visit(node);
-  if (expression)
-    ssaOtherValues.push_back((expression.get()));
-  return std::move(expression);
+
+  // Cache expression values to avoid duplicate visitation and generation
+  if (!expressionValueMap.count(node)) {
+    BaseQASM3Visitor::visit(node);
+    if (expression) {
+      ssaOtherValues.push_back((expression.get()));
+      expressionValueMap[node] = expression.get();
+    }
+    return std::move(expression);
+  }
+  llvm::outs() << "Found cached value for " << node->GetName() << "\n";
+  return expressionValueMap[node];
 }
 
 ExpressionValueType QUIRGenQASM3Visitor::visit_(const ASTBinaryOpNode *node) {
+  return visitByPrecedence<ASTBinaryOpNode>(node);
+}
+
+ExpressionValueType QUIRGenQASM3Visitor::genBinaryOpNode(const ASTBinaryOpNode *node) {
   switchCircuit(false, getLocation(node));
   // some op types are handled separately
   switch (node->GetOpType()) {
@@ -1560,6 +1572,7 @@ ExpressionValueType QUIRGenQASM3Visitor::visit_(const ASTBinaryOpNode *node) {
   default:
     break;
   }
+
 
   const ASTExpressionNode *left = node->GetLeft();
   const ASTExpressionNode *right = node->GetRight();
@@ -1825,6 +1838,10 @@ ExpressionValueType QUIRGenQASM3Visitor::visit_(const ASTBinaryOpNode *node) {
 }
 
 ExpressionValueType QUIRGenQASM3Visitor::visit_(const ASTUnaryOpNode *node) {
+  return visitByPrecedence<ASTUnaryOpNode>(node);
+}
+
+ExpressionValueType QUIRGenQASM3Visitor::genUnaryOpNode(const ASTUnaryOpNode *node) {
   switchCircuit(true, getLocation(node));
 
   const Location loc = getLocation(node);

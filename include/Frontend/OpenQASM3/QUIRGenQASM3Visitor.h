@@ -29,6 +29,7 @@
 #include "llvm/Support/Error.h"
 
 #include <unordered_map>
+#include <qasm/AST/ASTOperatorPrecedenceController.h>
 
 namespace qssc::frontend::openqasm3 {
 
@@ -109,6 +110,59 @@ private:
     reportError(node, mlir::DiagnosticSeverity::Error)
         << name << " is not supported on value of type: " << type << "\n";
     return createVoidValue(node);
+  }
+
+  /// @brief Visit the input operator's subexpressions based on their operation precedence
+  /// @tparam PrecOp Type of operator to visit
+  /// @param node Input AST node to visit
+  /// @return The final value emitted from evaluating the precedence ordered subexpression tree
+  template<class PrecOp>
+  ExpressionValueType visitByPrecedence(const PrecOp *node) {
+
+      if ()
+
+      auto opPrecedenceController = QASM::ASTOperatorPrecedenceController::Instance();
+      std::multimap<uint32_t, QASM::ASTVariantOpNode> opPrecedenceMap;
+
+      opPrecedenceController.Expand(node, opPrecedenceMap);
+
+      mlir::Value rootValue;
+      for (std::multimap<uint32_t, QASM::ASTVariantOpNode>::const_iterator pair = opPrecedenceMap.begin(); pair != opPrecedenceMap.end(); ++pair) {
+        switch ((*pair).second.index()) {
+          case 0: {
+            auto toVisit = std::get<0>((*pair).second);
+            if (!expressionValueMap.count(toVisit)) {
+              llvm::outs() << "Visiting " << toVisit->GetName() << "with precedence: "<< (*pair).first << "\n";
+              auto valueOrError = genBinaryOpNode(toVisit);
+              if (!valueOrError) {
+                return valueOrError;
+              }
+              expressionValueMap[toVisit] = valueOrError.get();
+            }
+            break;
+          }
+          case 1: {
+            auto toVisit = std::get<1>((*pair).second);
+            if (!expressionValueMap.count(toVisit)) {
+              llvm::outs() << "Visiting " << toVisit->GetName() << "with precedence: "<< (*pair).first << "\n";
+              auto valueOrError = genUnaryOpNode(toVisit);
+              if (!valueOrError) {
+                return valueOrError;
+              }
+              expressionValueMap[toVisit] = valueOrError.get();
+            }
+            break;
+          }
+          case 2:
+          default:
+            reportError(node, mlir::DiagnosticSeverity::Error)
+                << "Invalid subexpression reached in node: " << node->GetName()
+                << "\n";
+            return createVoidValue(node);
+            break;
+        }
+      }
+      return rootValue;
   }
 
 public:
@@ -243,6 +297,7 @@ protected:
     visitWithReturn(node);
   };
   ExpressionValueType visit_(const QASM::ASTBinaryOpNode *node);
+  ExpressionValueType genBinaryOpNode(const QASM::ASTBinaryOpNode *node);
 
   void visit(const QASM::ASTIntNode *node) override { visitWithReturn(node); };
   ExpressionValueType visit_(const QASM::ASTIntNode *node);
@@ -300,6 +355,7 @@ protected:
     visitWithReturn(node);
   }
   ExpressionValueType visit_(const QASM::ASTUnaryOpNode *);
+  ExpressionValueType genUnaryOpNode(const QASM::ASTUnaryOpNode *);
 
 private:
   ExpressionValueType handleAssign(const QASM::ASTBinaryOpNode *);
@@ -308,6 +364,9 @@ private:
   ExpressionValueType getValueFromLiteral(const QASM::ASTMPDecimalNode *);
 
   mlir::Type getQUIRTypeFromDeclaration(const QASM::ASTDeclarationNode *);
+
+  std::map<const QASM::ASTBase *, mlir::Value> expressionValueMap;
+
 };
 
 } // namespace qssc::frontend::openqasm3
