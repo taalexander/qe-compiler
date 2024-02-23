@@ -118,8 +118,9 @@ private:
   /// @return The final value emitted from evaluating the precedence ordered subexpression tree
   template<class PrecOp>
   ExpressionValueType visitByPrecedence(const PrecOp *node) {
-
-      if ()
+      llvm::outs() << "initial node \n";
+      node->print();
+      llvm::outs() << "\n";
 
       auto opPrecedenceController = QASM::ASTOperatorPrecedenceController::Instance();
       std::multimap<uint32_t, QASM::ASTVariantOpNode> opPrecedenceMap;
@@ -131,25 +132,27 @@ private:
         switch ((*pair).second.index()) {
           case 0: {
             auto toVisit = std::get<0>((*pair).second);
-            if (!expressionValueMap.count(toVisit)) {
+            if (!nodeValueMap.count(toVisit)) {
               llvm::outs() << "Visiting " << toVisit->GetName() << "with precedence: "<< (*pair).first << "\n";
               auto valueOrError = genBinaryOpNode(toVisit);
               if (!valueOrError) {
                 return valueOrError;
               }
-              expressionValueMap[toVisit] = valueOrError.get();
+              rootValue = valueOrError.get();
+              nodeValueMap[toVisit] = rootValue;
             }
             break;
           }
           case 1: {
             auto toVisit = std::get<1>((*pair).second);
-            if (!expressionValueMap.count(toVisit)) {
+            if (!nodeValueMap.count(toVisit)) {
               llvm::outs() << "Visiting " << toVisit->GetName() << "with precedence: "<< (*pair).first << "\n";
               auto valueOrError = genUnaryOpNode(toVisit);
               if (!valueOrError) {
                 return valueOrError;
               }
-              expressionValueMap[toVisit] = valueOrError.get();
+              rootValue = valueOrError.get();
+              nodeValueMap[toVisit] = rootValue;
             }
             break;
           }
@@ -365,7 +368,9 @@ private:
 
   mlir::Type getQUIRTypeFromDeclaration(const QASM::ASTDeclarationNode *);
 
-  std::map<const QASM::ASTBase *, mlir::Value> expressionValueMap;
+  // Mapping of processed AST nodes to an attached value (if applicable)
+  // Typically used for expression value processing
+  std::map<const QASM::ASTBase *, mlir::Value> nodeValueMap;
 
 };
 

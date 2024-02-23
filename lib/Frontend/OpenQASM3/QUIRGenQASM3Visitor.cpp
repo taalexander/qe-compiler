@@ -1545,16 +1545,16 @@ QUIRGenQASM3Visitor::visitAndGetExpressionValue(const ASTExpressionNode *node) {
   // do not switch circuit here
 
   // Cache expression values to avoid duplicate visitation and generation
-  if (!expressionValueMap.count(node)) {
+  if (!nodeValueMap.count(node)) {
     BaseQASM3Visitor::visit(node);
     if (expression) {
       ssaOtherValues.push_back((expression.get()));
-      expressionValueMap[node] = expression.get();
+      nodeValueMap[node] = expression.get();
     }
     return std::move(expression);
   }
   llvm::outs() << "Found cached value for " << node->GetName() << "\n";
-  return expressionValueMap[node];
+  return nodeValueMap[node];
 }
 
 ExpressionValueType QUIRGenQASM3Visitor::visit_(const ASTBinaryOpNode *node) {
@@ -1563,6 +1563,9 @@ ExpressionValueType QUIRGenQASM3Visitor::visit_(const ASTBinaryOpNode *node) {
 
 ExpressionValueType QUIRGenQASM3Visitor::genBinaryOpNode(const ASTBinaryOpNode *node) {
   switchCircuit(false, getLocation(node));
+
+  llvm::outs() << "\n";
+
   // some op types are handled separately
   switch (node->GetOpType()) {
 
