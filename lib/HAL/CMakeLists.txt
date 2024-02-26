@@ -30,6 +30,7 @@ unset(TARGET_REGISTRATION_INCLUDE_SECTION)
 # Add QSSCHAL lib
 get_property(qssc_targets GLOBAL PROPERTY QSSC_TARGETS)
 qssc_add_library(QSSCHAL
+    DialectRegistration.cpp
     PassRegistration.cpp
     SystemConfiguration.cpp
     TargetSystem.cpp

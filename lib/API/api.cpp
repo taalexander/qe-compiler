@@ -831,7 +831,8 @@ llvm::Error qssc::compileMain(int argc, const char **argv,
   // Add the following to include *all* QSS core dialects, or selectively
   // include what you need like above. You only need to register dialects that
   // will be *parsed* by the tool, not the one generated
-  qssc::dialect::registerDialects(registry);
+  if (auto err = qssc::dialect::registerDialects(registry))
+    return err;
 
   return compileMain(argc, argv, toolName, registry, std::move(diagnosticCb));
 }

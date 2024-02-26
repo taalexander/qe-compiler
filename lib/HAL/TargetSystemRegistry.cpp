@@ -45,6 +45,7 @@ public:
     return llvm::Error::success();
   }
 };
+
 } // namespace
 
 TargetSystemInfo *TargetSystemRegistry::nullTargetSystemInfo() {
@@ -54,7 +55,7 @@ TargetSystemInfo *TargetSystemRegistry::nullTargetSystemInfo() {
       [](std::optional<llvm::StringRef> config) {
         return std::make_unique<NullTarget>();
       },
-      []() { return llvm::Error::success(); },
-      []() { return llvm::Error::success(); });
+      detail::noOptRegisterDialectFn, detail::noOptRegisterFn,
+      detail::noOptRegisterFn);
   return nullTarget.get();
 }

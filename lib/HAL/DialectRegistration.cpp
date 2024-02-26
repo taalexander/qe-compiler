@@ -1,6 +1,6 @@
-//===- PassRegistration.cpp -------------------------------------*- C++ -*-===//
+//===- DialectRegistration.cpp ----------------------------------*- C++ -*-===//
 //
-// (C) Copyright IBM 2023.
+// (C) Copyright IBM 2024.
 //
 // This code is part of Qiskit.
 //
@@ -14,7 +14,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "HAL/PassRegistration.h"
+#include "HAL/DialectRegistration.h"
 
 #include "HAL/TargetSystemRegistry.h"
 
@@ -25,22 +25,12 @@
 using namespace qssc;
 using namespace qssc::hal;
 
-llvm::Error hal::registerTargetPasses() {
-  llvm::Error err = llvm::Error::success();
-  for (const auto &target :
-       registry::TargetSystemRegistry::registeredPlugins()) {
-    err =
-        llvm::joinErrors(std::move(err), target.second.registerTargetPasses());
-  }
-  return err;
-}
-
-llvm::Error hal::registerTargetPipelines() {
+llvm::Error hal::registerTargetDialects(mlir::DialectRegistry &registry) {
   llvm::Error err = llvm::Error::success();
   for (const auto &target :
        registry::TargetSystemRegistry::registeredPlugins()) {
     err = llvm::joinErrors(std::move(err),
-                           target.second.registerTargetPassPipelines());
+                           target.second.registerTargetDialects(registry));
   }
   return err;
 }

@@ -72,8 +72,11 @@ public:
   static constexpr auto name = "mock";
   static const std::vector<std::string> childNames;
   explicit MockSystem(std::unique_ptr<MockConfig> config);
+  static llvm::Expected<std::unique_ptr<hal::TargetSystem>>
+  buildTarget(std::optional<llvm::StringRef> configurationPath);
   static llvm::Error registerTargetPasses();
   static llvm::Error registerTargetPipelines();
+  static llvm::Error registerTargetDialects(mlir::DialectRegistry &registry);
   llvm::Error addPasses(mlir::PassManager &pm) override;
   llvm::Error emitToPayload(mlir::ModuleOp moduleOp,
                             payload::Payload &payload) override;

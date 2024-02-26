@@ -19,21 +19,27 @@
 #include "Plugin/PluginInfo.h"
 #include "Support/Pimpl.h"
 
+#include "mlir/IR/DialectRegistry.h"
+
 namespace qssc::hal::registry {
 
 /// Class to group info about a registered target. Such as how to invoke
 /// and a description.
 class TargetSystemInfo
     : public qssc::plugin::registry::PluginInfo<qssc::hal::TargetSystem> {
+
+public:
   using PluginInfo =
       qssc::plugin::registry::PluginInfo<qssc::hal::TargetSystem>;
+  using DialectsFunction =
+      std::function<llvm::Error(mlir::DialectRegistry &registry)>;
   using PassesFunction = std::function<llvm::Error()>;
   using PassPipelinesFunction = std::function<llvm::Error()>;
 
-public:
   /// Construct this entry
   TargetSystemInfo(llvm::StringRef name, llvm::StringRef description,
                    PluginInfo::PluginFactoryFunction targetFactory,
+                   DialectsFunction dialectRegistrar,
                    PassesFunction passRegistrar,
                    PassPipelinesFunction passPipelineRegistrar);
 
@@ -51,6 +57,10 @@ public:
   llvm::Expected<qssc::hal::TargetSystem *>
   getTarget(mlir::MLIRContext *context) const;
 
+  /// Register this target's MLIR dialects with the QSSC system.
+  /// Should only be called once on initialization.
+  llvm::Error registerTargetDialects(mlir::DialectRegistry &registry) const;
+
   /// Register this target's MLIR passes with the QSSC system.
   /// Should only be called once on initialization.
   llvm::Error registerTargetPasses() const;
@@ -63,6 +73,8 @@ private:
   struct Impl;
 
   qssc::support::Pimpl<Impl> impl;
+
+  DialectsFunction dialectRegistrar;
 
   PassesFunction passRegistrar;
 

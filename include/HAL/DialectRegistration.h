@@ -1,6 +1,6 @@
-//===- PassRegistration.h - Top-level pass registration ---------*- C++ -*-===//
+//===- DialectRegistration.h - Top-level dialect registration ---*- C++ -*-===//
 //
-// (C) Copyright IBM 2023.
+// (C) Copyright IBM 2024.
 //
 // This code is part of Qiskit.
 //
@@ -14,25 +14,22 @@
 //
 //===----------------------------------------------------------------------===//
 //
-//  This file declares the top-level functions for registering passes and
-//  pipelines
+//  This file declares the top-level functions for registering dialects
 //
 //===----------------------------------------------------------------------===//
-#ifndef PASSREGISTRATION_H
-#define PASSREGISTRATION_H
+#ifndef DIALECTREGISTRATION_H
+#define DIALECTREGISTRATION_H
+
+#include "mlir/IR/DialectRegistry.h"
 
 #include "llvm/Support/Error.h"
 
 namespace qssc::hal {
-/// Register all registered MLIR passes
+/// Register all registered MLIR target dialects
 /// for the registered Targets with the
 /// QSSC system.
-llvm::Error registerTargetPasses();
+llvm::Error registerTargetDialects(mlir::DialectRegistry &registry);
 
-/// Register all registered MLIR pass pipelines
-/// for the registered Targets with the
-/// QSSC system.
-llvm::Error registerTargetPipelines();
 } // namespace qssc::hal
 
-#endif // PASSREGISTRATION_H
+#endif // DIALECTREGISTRATION_H

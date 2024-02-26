@@ -87,17 +87,7 @@ llvm::cl::OptionCategory
 int qssc::targets::systems::mock::init() {
   bool const registered =
       registry::TargetSystemRegistry::registerPlugin<MockSystem>(
-          "mock", "Mock system for testing the targeting infrastructure.",
-          [](std::optional<llvm::StringRef> configurationPath)
-              -> llvm::Expected<std::unique_ptr<hal::TargetSystem>> {
-            if (!configurationPath)
-              return llvm::createStringError(
-                  llvm::inconvertibleErrorCode(),
-                  "Configuration file must be specified.\n");
-
-            auto config = std::make_unique<MockConfig>(*configurationPath);
-            return std::make_unique<MockSystem>(std::move(config));
-          });
+          "mock", "Mock system for testing the targeting infrastructure.");
   return registered ? 0 : -1;
 }
 
@@ -207,6 +197,16 @@ void mockPipelineBuilder(mlir::OpPassManager &pm) {
 } // mockPipelineBuilder
 } // anonymous namespace
 
+llvm::Expected<std::unique_ptr<TargetSystem>>
+MockSystem::buildTarget(std::optional<llvm::StringRef> configurationPath) {
+  if (!configurationPath)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "Configuration file must be specified.\n");
+
+  auto config = std::make_unique<MockConfig>(*configurationPath);
+  return std::make_unique<MockSystem>(std::move(config));
+}
+
 llvm::Error MockSystem::registerTargetPipelines() {
   mlir::PassPipelineRegistration<> const pipeline(
       "mock-conversion", "Run Mock-specific conversions", mockPipelineBuilder);
@@ -216,6 +216,11 @@ llvm::Error MockSystem::registerTargetPipelines() {
 
   return llvm::Error::success();
 } // MockSystem::registerTargetPipelines
+
+llvm::Error
+MockSystem::registerTargetDialects(mlir::DialectRegistry &registry) {
+  return llvm::Error::success();
+} // MockSystem::registerTargetDialects
 
 llvm::Error MockSystem::addPasses(mlir::PassManager &pm) {
   pm.addPass(mlir::createCanonicalizerPass());

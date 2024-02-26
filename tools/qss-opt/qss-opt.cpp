@@ -219,7 +219,10 @@ auto main(int argc, char **argv) -> int {
   }
 
   mlir::DialectRegistry registry;
-  qssc::dialect::registerDialects(registry);
+  if (auto err = qssc::dialect::registerDialects(registry)) {
+    llvm::errs() << err << "\n";
+    return EXIT_FAILURE;
+  }
   mlir::registerAllExtensions(registry);
 
   return mlir::asMainReturnCode(QSSCOptMain(argc, argv, registry));

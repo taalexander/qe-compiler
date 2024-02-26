@@ -45,9 +45,12 @@ struct TargetSystemInfo::Impl {
 TargetSystemInfo::TargetSystemInfo(
     llvm::StringRef name, llvm::StringRef description,
     PluginInfo::PluginFactoryFunction targetFactory,
-    PassesFunction passRegistrar, PassPipelinesFunction passPipelineRegistrar)
+    DialectsFunction dialectRegistrar, PassesFunction passRegistrar,
+    PassPipelinesFunction passPipelineRegistrar)
     : TargetSystemInfo::PluginInfo(name, description, std::move(targetFactory)),
-      impl(std::make_unique<Impl>()), passRegistrar(std::move(passRegistrar)),
+      impl(std::make_unique<Impl>()),
+      dialectRegistrar(std::move(dialectRegistrar)),
+      passRegistrar(std::move(passRegistrar)),
       passPipelineRegistrar(std::move(passPipelineRegistrar)) {}
 
 TargetSystemInfo::~TargetSystemInfo() = default;
@@ -76,6 +79,11 @@ TargetSystemInfo::getTarget(mlir::MLIRContext *context) const {
   return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                  "Error: no target of type '" + getName() +
                                      "' registered for the given context.\n");
+}
+
+llvm::Error TargetSystemInfo::registerTargetDialects(
+    mlir::DialectRegistry &registry) const {
+  return dialectRegistrar(registry);
 }
 
 llvm::Error TargetSystemInfo::registerTargetPasses() const {
