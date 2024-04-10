@@ -20,10 +20,10 @@ OPENQASM 3.0;
 qubit $0;
 
 // For loop.
-// MLIR: %c0_0 = arith.constant 0 : index
-// MLIR: %c5 = arith.constant 5 : index
-// MLIR: %c1_1 = arith.constant 1 : index
-// MLIR: scf.for %arg1 = %c0_0 to %c5 step %c1_1 {
+// MLIR: %c0_i32_0 = arith.constant 0 : i32
+// MLIR: %c5_i32 = arith.constant 5 : i32
+// MLIR: %c1_i32 = arith.constant 1 : i32
+// MLIR: scf.for %arg1 = %c0_i32_0 to %c5_i32 step %c1_i32 : i32 {
 // AST-PRETTY: ForStatementNode(start=0, end=4,
 for i in [0 : 4] {
     // MLIR-NO-CIRCUITS: {{.*}} = quir.constant #quir.angle<1.57079632679> : !quir.angle<64>
@@ -37,10 +37,10 @@ for i in [0 : 4] {
     U(1.57079632679, 0.0, 3.14159265359) $0;
 }
 
-// MLIR: %c0_2 = arith.constant 0 : index
-// MLIR: %c5_3 = arith.constant 5 : index
-// MLIR: %c1_4 = arith.constant 1 : index
-// MLIR: scf.for %arg1 = %c0_2 to %c5_3 step %c1_4 {
+// MLIR: %c0_i32_1 = arith.constant 0 : i32
+// MLIR: %c5_i32_2 = arith.constant 5 : i32
+// MLIR: %c1_i32_3 = arith.constant 1 : i32
+// MLIR: scf.for %arg1 = %c0_i32_1 to %c5_i32_2 step %c1_i32_3  : i32 {
 // AST-PRETTY: ForStatementNode(start=0, stepping=1, end=4,
 for i in [0 : 1 : 4] {
     // MLIR-NO-CIRCUITS: {{.*}} = quir.constant #quir.angle<1.57079632679> : !quir.angle<64>
@@ -51,10 +51,10 @@ for i in [0 : 1 : 4] {
     U(1.57079632679, 0.0, 3.14159265359) $0;
 }
 
-// MLIR: %c-1 = arith.constant -1 : index
-// MLIR: %c1001 = arith.constant 1001 : index
-// MLIR: %c10 = arith.constant 10 : index
-// MLIR: scf.for %arg1 = %c-1 to %c1001 step %c10 {
+// MLIR: %c-1_i32 = arith.constant -1 : i32
+// MLIR: %c1001_i32 = arith.constant 1001 : i32
+// MLIR: %c10_i32 = arith.constant 10 : i32
+// MLIR: scf.for %arg1 = %c-1_i32 to %c1001_i32 step %c10_i32  : i32 {
 // AST-PRETTY: ForStatementNode(start=-1, stepping=10, end=1000,
 for i in [-1 : 10 : 1000] {
     // MLIR-NO-CIRCUITS: {{.*}} = quir.constant #quir.angle<1.57079632679> : !quir.angle<64>

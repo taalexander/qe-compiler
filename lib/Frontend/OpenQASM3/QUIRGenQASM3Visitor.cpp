@@ -384,27 +384,30 @@ void QUIRGenQASM3Visitor::visit(const ASTForStatementNode *node) {
   const ASTIntegerList &intList = loop->GetIntegerList();
   Location const loc = getLocation(node);
 
+  // Adding induction variable to SSA values map
+  const ASTIntNode *indVar = loop->GetIndVar();
+  const unsigned precisionBits = indVar->GetBits();
+
+  auto indexType = builder.getIntegerType(precisionBits);
+
   // Lower bound
   auto startOp = builder.create<mlir::arith::ConstantOp>(
-      loc, builder.getIndexType(), builder.getIndexAttr(intList.front()));
+      loc, indexType, builder.getIntegerAttr(indexType, intList.front()));
 
   // Upper bound
   // +1 because the SCF dialect has a half-open range, so it does not include
   // the upper bound, whereas OpenQASM3 has an inclusive range, so it includes
   // both the lower bound and the upper bound.
   auto endOp = builder.create<mlir::arith::ConstantOp>(
-      loc, builder.getIndexType(), builder.getIndexAttr(intList.back() + 1));
+      loc, indexType, builder.getIntegerAttr(indexType, intList.back() + 1));
 
   // Stepping
   auto stepOp = builder.create<mlir::arith::ConstantOp>(
-      loc, builder.getIndexType(), builder.getIndexAttr(loop->GetStepping()));
+      loc, indexType, builder.getIntegerAttr(indexType, loop->GetStepping()));
 
   auto forOp = builder.create<scf::ForOp>(loc, startOp, endOp, stepOp);
 
-  // Adding induction variable to SSA values map
-  const ASTIntNode *indVar = loop->GetIndVar();
-  Value const forOpIndVar = forOp.getInductionVar();
-  ssaValues[indVar->GetName()] = forOpIndVar;
+  ssaValues[indVar->GetName()] = forOp.getInductionVar();
 
   // Dictionary of SSA values used inside "for"
   std::unordered_map<std::string, mlir::Value> forSsaValues = ssaValues;
@@ -1672,7 +1675,9 @@ ExpressionValueType QUIRGenQASM3Visitor::visit_(const ASTBinaryOpNode *node) {
   // lambda function for checking type mismatch
   auto createCastIfTypeMismatch = [&]() {
     // cast in case of IndexType
-    if (leftType != rightType && (leftType.isIndex() || rightType.isIndex())) {
+    bool castableTypes = (leftType.isIntOrIndex() || rightType.isIntOrIndex());
+
+    if (leftType != rightType && castableTypes) {
       if (leftType.isIndex())
         leftRef = builder.create<CastOp>(getLocation(left), rightType, leftRef);
       else

@@ -67,7 +67,7 @@ if (c == 0) {
   x $0;
 }
 
-// MLIR: scf.for %{{.*}} = %{{.*}} to %{{.*}} step %c{{.*}}1_3 {
+// MLIR: scf.for %{{.*}} = %{{.*}} to %{{.*}} step %{{.*}} : i32 {
 for ii in [0 : 4] {
 // MLIR:             %{{.*}} = quir.constant #quir.duration<3.200000e+01> : !quir.duration<dt>
 // MLIR-NO-CIRCUITS: quir.delay %{{.*}}, (%{{.*}}) : !quir.duration<dt>, (!quir.qubit<1>) -> ()
