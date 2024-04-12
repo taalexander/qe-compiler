@@ -53,6 +53,7 @@
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Tools/ParseUtilities.h"
 
+#include "mlir/Debug/Counter.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
@@ -88,6 +89,7 @@ auto registerCLOpts() {
   mlir::registerPassManagerCLOptions();
   mlir::registerDefaultTimingManagerCLOptions();
   qssc::hal::compile::registerTargetCompilationManagerCLOptions();
+  tracing::DebugCounter::registerCLOptions();
 }
 
 void printVersion(llvm::raw_ostream &out) {
@@ -440,6 +442,9 @@ llvm::Error performCompileActions(llvm::raw_ostream &outputStream,
   if (auto err = targetResult.takeError())
     return err;
   auto &target = targetResult.get();
+
+  tracing::InstallDebugHandler installDebugHandler(context,
+                                                   config.getDebugConfig());
 
   // Set up the input, which is loaded from a file by name or stdin
   auto sourceMgr = std::make_shared<llvm::SourceMgr>();
