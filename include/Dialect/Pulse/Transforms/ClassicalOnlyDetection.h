@@ -32,7 +32,8 @@ namespace mlir::pulse {
 // attribute to all of the scf ops with a value of either true or false
 struct ClassicalOnlyDetectionPass
     : public PassWrapper<ClassicalOnlyDetectionPass, OperationPass<>> {
-  auto hasPulseSubOps(Operation *inOp) -> bool;
+  bool isPulseBlock(Block *block);
+  bool hasPulseSubOps(Operation *inOp);
   void runOnOperation() override;
 
   llvm::StringRef getArgument() const override;

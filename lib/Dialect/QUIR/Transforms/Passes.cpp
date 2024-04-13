@@ -40,6 +40,7 @@
 #include "Dialect/QUIR/Transforms/VariableElimination.h"
 #include "Dialect/QUIR/Utils/Utils.h"
 
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Attributes.h"
@@ -178,9 +179,11 @@ void ClassicalOnlyDetectionPass::runOnOperation() {
   moduleOperation->walk([&](Operation *op) {
     if (dyn_cast<scf::IfOp>(op) || dyn_cast<scf::ForOp>(op) ||
         dyn_cast<scf::WhileOp>(op) || dyn_cast<quir::SwitchOp>(op) ||
-        dyn_cast<quir::CircuitOp>(op))
+        dyn_cast<quir::CircuitOp>(op) || dyn_cast<cf::CondBranchOp>(op) ||
+        dyn_cast<cf::BranchOp>(op))
       op->setAttr(llvm::StringRef("quir.classicalOnly"),
                   b.getBoolAttr(hasQuantumSubOps(op)));
+
     if (auto funcOp = dyn_cast<mlir::func::FuncOp>(op)) {
       // just check the arguments for qubitType values
       FunctionType const fType = funcOp.getFunctionType();

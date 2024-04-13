@@ -25,10 +25,12 @@
 #include "Dialect/Pulse/IR/PulseOps.h"
 #include "Dialect/QUIR/IR/QUIROps.h"
 
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/Dominance.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Support/LLVM.h"
@@ -43,8 +45,17 @@ namespace mlir::pulse {
 
 // detects whether or not an operation contains pulse operations inside
 auto ClassicalOnlyDetectionPass::hasPulseSubOps(Operation *inOp) -> bool {
+  for (auto &region : inOp->getRegions())
+    for (auto &block : region.getBlocks())
+      if (isPulseBlock(&block))
+        ;
+  return true;
+  return false;
+} // ClassicalOnlyDetectionPass::hasPulseSubOps
+
+auto ClassicalOnlyDetectionPass::isPulseBlock(Block *block) -> bool {
   bool retVal = false;
-  inOp->walk([&](Operation *op) {
+  block->walk([&](Operation *op) {
     if (llvm::isa<pulse::PulseDialect>(op->getDialect())) {
       retVal = true;
       return WalkResult::interrupt();
@@ -57,6 +68,9 @@ auto ClassicalOnlyDetectionPass::hasPulseSubOps(Operation *inOp) -> bool {
 // Entry point for the ClassicalOnlyDetectionPass pass
 void ClassicalOnlyDetectionPass::runOnOperation() {
   // This pass is only called on the top-level module Op
+
+  auto &domInfo = getAnalysis<mlir::DominanceInfo>();
+
   Operation *moduleOperation = getOperation();
   OpBuilder b(moduleOperation);
 
@@ -71,6 +85,18 @@ void ClassicalOnlyDetectionPass::runOnOperation() {
       auto classicalOnlyAttr = op->getAttrOfType<BoolAttr>(attrName);
       if (!classicalOnlyAttr || classicalOnlyAttr.getValue())
         op->setAttr(attrName, b.getBoolAttr(!hasPulseSubOps(op)));
+    } else if (auto castOp = dyn_cast<cf::CondBranchOp>(op)) {
+      auto attrName = llvm::StringRef("quir.classicalOnly");
+      auto classicalOnlyAttr = op->getAttrOfType<BoolAttr>(attrName);
+      if (!classicalOnlyAttr || classicalOnlyAttr.getValue())
+        op->setAttr(attrName,
+                    b.getBoolAttr(!(isPulseBlock(castOp.getTrueDest()) ||
+                                    isPulseBlock(castOp.getFalseDest()))));
+    } else if (auto castOp = dyn_cast<cf::BranchOp>(op)) {
+      auto attrName = llvm::StringRef("quir.classicalOnly");
+      auto classicalOnlyAttr = op->getAttrOfType<BoolAttr>(attrName);
+      if (!classicalOnlyAttr || classicalOnlyAttr.getValue())
+        op->setAttr(attrName, b.getBoolAttr(!(isPulseBlock(castOp.getDest()))));
     }
   });
 } // ClassicalOnlyDetectionPass::runOnOperation
