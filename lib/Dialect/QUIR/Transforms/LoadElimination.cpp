@@ -36,8 +36,7 @@ namespace mlir::quir {
 
 void LoadEliminationPass::runOnOperation() {
   // Eliminate simple cases where variables are assigned only once. That is,
-  // they are effectively constants. (to be extended considerably as part of
-  // IBM-Q-Software/qss-compiler#470)
+  // they are effectively constants.
   //
   // We consider only declarations for variables that have only a single
   // assignment. Then, we iterate all uses of the variable. When a use of a
