@@ -98,8 +98,8 @@ pulse.sequence @seq_0(%arg1: !pulse.waveform, %arg2: !pulse.mixed_frame) -> i1 {
     pulse.return %0 : i1
 }
 
-func.func @subroutine3() -> i32 {
-    // CHECK: func.func @subroutine3()
+func.func @cf_with_pulse() -> i32 {
+    // CHECK: func.func @cf_with_pulse()
     // CHECK-SAME: attributes {quir.classicalOnly = false} {
       %2 = "pulse.create_port"() {uid = "p0"} : () -> !pulse.port
       %4 = "pulse.mix_frame"(%2) {uid = "mf0-p0"} : (!pulse.port) -> !pulse.mixed_frame
@@ -118,7 +118,7 @@ func.func @subroutine3() -> i32 {
     ^bb2:  // pred: ^bb1
       %9 = arith.addi %6, %c1_i32 : i32
       cf.br ^bb1(%9 : i32)
-      // CHECK: cf.br ^bb1(%{{.*}} : i32) {quir.classicalOnly = false}
+      // CHECK: cf.br ^bb1(%{{.*}} : i32) {quir.classicalOnly = true}
     ^bb3:  // pred: ^bb1
       cf.br ^bb4
       // CHECK: cf.br ^bb4 {quir.classicalOnly = false}
@@ -126,4 +126,36 @@ func.func @subroutine3() -> i32 {
       %26 = pulse.call_sequence @seq_0(%5, %4) : (!pulse.waveform, !pulse.mixed_frame) -> i1
       qcs.finalize
       return %c0_i32 : i32
+}
+
+func.func @cf_without_pulse() -> i32 {
+    // CHECK: func.func @cf_without_pulse()
+    // CHECK-SAME: attributes {quir.classicalOnly = false} {
+      %2 = "pulse.create_port"() {uid = "p0"} : () -> !pulse.port
+      %4 = "pulse.mix_frame"(%2) {uid = "mf0-p0"} : (!pulse.port) -> !pulse.mixed_frame
+      %5 = pulse.create_waveform dense<[[0.0, 1.0]]> : tensor<1x2xf64> -> !pulse.waveform
+      %c0_i32 = arith.constant 0 : i32
+      %c11_i32 = arith.constant 11 : i32
+      %c1_i32 = arith.constant 1 : i32
+      qcs.init
+      qcs.shot_init {qcs.num_shots = 1 : i32}
+      cf.br ^bb1(%c0_i32 : i32)
+      // CHECK: cf.br ^bb1(%c0_i32 : i32) {quir.classicalOnly = false}
+    ^bb1(%6: i32):  // 2 preds: ^bb0, ^bb2
+      %7 = arith.cmpi slt, %6, %c11_i32 : i32
+      cf.cond_br %7, ^bb2, ^bb3
+      // CHECK: cf.cond_br %{{.*}}, ^bb2, ^bb3 {quir.classicalOnly = false}
+    ^bb2:  // pred: ^bb1
+      %9 = arith.cmpi slt, %6, %c11_i32 : i32
+      %10 = arith.addi %6, %c1_i32 : i32
+      cf.cond_br %9, ^bb1(%10 : i32), ^bb5(%10 : i32)
+      // CHECK: cf.cond_br %{{.*}}, ^bb1(%{{.*}} : i32), ^bb4(%{{.*}} : i32) {quir.classicalOnly = true}
+    ^bb3:  // pred: ^bb1
+      %26 = pulse.call_sequence @seq_0(%5, %4) : (!pulse.waveform, !pulse.mixed_frame) -> i1
+      qcs.finalize
+      return %c0_i32 : i32
+    ^bb5(%11: i32): // pred: ^bb3
+      return %c0_i32 : i32
+
+
 }

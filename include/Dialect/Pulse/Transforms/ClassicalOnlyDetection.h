@@ -27,13 +27,12 @@
 
 namespace mlir::pulse {
 
-// This pass recurses through the IR and detects when scf
-// ops use only classical operations. It then applies the classicalOnly
+// This pass recurses through the IR and detects when
+// cf/scf/quir control flow ops ops use only classical operations.
+// It then applies the classicalOnly
 // attribute to all of the scf ops with a value of either true or false
 struct ClassicalOnlyDetectionPass
     : public PassWrapper<ClassicalOnlyDetectionPass, OperationPass<>> {
-  bool isPulseBlock(Block *block);
-  bool hasPulseSubOps(Operation *inOp);
   void runOnOperation() override;
 
   llvm::StringRef getArgument() const override;

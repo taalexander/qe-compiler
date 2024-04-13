@@ -43,19 +43,26 @@ using namespace mlir::pulse;
 
 namespace mlir::pulse {
 
-// detects whether or not an operation contains pulse operations inside
-auto ClassicalOnlyDetectionPass::hasPulseSubOps(Operation *inOp) -> bool {
-  for (auto &region : inOp->getRegions())
-    for (auto &block : region.getBlocks())
-      if (isPulseBlock(&block))
-        ;
-  return true;
-  return false;
-} // ClassicalOnlyDetectionPass::hasPulseSubOps
+static const auto attrName = llvm::StringRef("quir.classicalOnly");
 
-auto ClassicalOnlyDetectionPass::isPulseBlock(Block *block) -> bool {
+static void
+markDominatorsOfPulseOp(OpBuilder &builder, mlir::DominanceInfo &domInfo,
+                        std::vector<Operation *> &toAnalyzeIfDominates,
+                        Operation *pulseOp) {
+  // Iterate through attributing any operations that dominate the pulse op and
+  // removing from the analysis list.
+  std::vector<Operation *>::iterator iter;
+  for (iter = toAnalyzeIfDominates.begin(); iter != toAnalyzeIfDominates.end();)
+    if (domInfo.dominates(*iter, pulseOp)) {
+      (*iter)->setAttr(attrName, builder.getBoolAttr(false));
+      iter = toAnalyzeIfDominates.erase(iter);
+    } else
+      ++iter;
+}
+
+static bool hasPulseSubOps(Operation *inOp) {
   bool retVal = false;
-  block->walk([&](Operation *op) {
+  inOp->walk([&](Operation *op) {
     if (llvm::isa<pulse::PulseDialect>(op->getDialect())) {
       retVal = true;
       return WalkResult::interrupt();
@@ -63,7 +70,7 @@ auto ClassicalOnlyDetectionPass::isPulseBlock(Block *block) -> bool {
     return WalkResult::advance();
   });
   return retVal;
-} // ClassicalOnlyDetectionPass::hasPulseSubOps
+}
 
 // Entry point for the ClassicalOnlyDetectionPass pass
 void ClassicalOnlyDetectionPass::runOnOperation() {
@@ -72,8 +79,11 @@ void ClassicalOnlyDetectionPass::runOnOperation() {
   auto &domInfo = getAnalysis<mlir::DominanceInfo>();
 
   Operation *moduleOperation = getOperation();
-  OpBuilder b(moduleOperation);
+  OpBuilder builder(moduleOperation);
 
+  std::vector<Operation *> toAnalyzeIfDominates;
+
+  // Add operations to be verified for dominating a pulse operation
   moduleOperation->walk([&](Operation *op) {
     if (dyn_cast<scf::IfOp>(op) || dyn_cast<scf::ForOp>(op) ||
         dyn_cast<quir::SwitchOp>(op) || dyn_cast<SequenceOp>(op) ||
@@ -81,22 +91,24 @@ void ClassicalOnlyDetectionPass::runOnOperation() {
       // check for a pre-existing classicalOnly attribute
       // only update if the attribute does not exist or it is true
       // indicating that no quantum ops have been identified yet
-      auto attrName = llvm::StringRef("quir.classicalOnly");
       auto classicalOnlyAttr = op->getAttrOfType<BoolAttr>(attrName);
       if (!classicalOnlyAttr || classicalOnlyAttr.getValue())
-        op->setAttr(attrName, b.getBoolAttr(!hasPulseSubOps(op)));
-    } else if (auto castOp = dyn_cast<cf::CondBranchOp>(op)) {
-      auto attrName = llvm::StringRef("quir.classicalOnly");
+        op->setAttr(attrName, builder.getBoolAttr(!hasPulseSubOps(op)));
+      return WalkResult::advance();
+    } else if (dyn_cast<cf::CondBranchOp>(op) || dyn_cast<cf::BranchOp>(op)) {
       auto classicalOnlyAttr = op->getAttrOfType<BoolAttr>(attrName);
       if (!classicalOnlyAttr || classicalOnlyAttr.getValue())
-        op->setAttr(attrName,
-                    b.getBoolAttr(!(isPulseBlock(castOp.getTrueDest()) ||
-                                    isPulseBlock(castOp.getFalseDest()))));
-    } else if (auto castOp = dyn_cast<cf::BranchOp>(op)) {
-      auto attrName = llvm::StringRef("quir.classicalOnly");
-      auto classicalOnlyAttr = op->getAttrOfType<BoolAttr>(attrName);
-      if (!classicalOnlyAttr || classicalOnlyAttr.getValue())
-        op->setAttr(attrName, b.getBoolAttr(!(isPulseBlock(castOp.getDest()))));
+        // Classical only until proven otherwise
+        op->setAttr(attrName, builder.getBoolAttr(true));
+      toAnalyzeIfDominates.push_back(op);
+
+      return WalkResult::advance();
+    }
+
+    // Attribute any operators that this pulse operation dominates
+    if (llvm::isa<pulse::PulseDialect>(op->getDialect()) &&
+        toAnalyzeIfDominates.size()) {
+      markDominatorsOfPulseOp(builder, domInfo, toAnalyzeIfDominates, op);
     }
   });
 } // ClassicalOnlyDetectionPass::runOnOperation
