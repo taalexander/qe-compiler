@@ -299,7 +299,29 @@ def QCS_ParameterLoadOp : QCS_Op<"parameter_load",
     }];
 }
 
-def QCS_AwaitRemoteProcedureCallOp : QCS_Op<"recv_rpc", [
+def QCS_SendRemoteProcedureCallOp : QCS_Op<"send_rpc", [MemRefsNormalizable]> {
+    let summary = "Send a remote procedure call to another component in the system.";
+
+    let description = [{
+        This op sends a remote procedure call to another component in the system by idenfitier.
+
+        Example:
+        ```mlir
+        ^bb2:
+        %2 = call @someFn()
+        qcf.send_rpc
+        ```
+    }];
+
+    let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$operands);
+    let results = (outs Variadic<AnyType>);
+
+    let assemblyFormat = [{
+        $callee `(` $operands `)` attr-dict `:` functional-type($operands, results)
+    }];
+}
+
+def QCS_ReceiveRemoteProcedureCallOp : QCS_Op<"recv_rpc", [
     Terminator, Pure]> {
     let summary = "A pseudo-op that signifies the end of a block (procedure) for which the next block (procedure) will be invoked remotely.";
 
