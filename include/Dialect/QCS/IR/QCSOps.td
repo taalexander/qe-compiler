@@ -299,19 +299,19 @@ def QCS_ParameterLoadOp : QCS_Op<"parameter_load",
     }];
 }
 
-def QCS_AwaitRemoteBlockCallOp : QCS_Op<"await_rbc", [
+def QCS_AwaitRemoteProcedureCallOp : QCS_Op<"recv_rpc", [
     Terminator, Pure]> {
-    let summary = "A pseudo-op that the end of a block routine for which the next block will be invoked remotely.";
+    let summary = "A pseudo-op that signifies the end of a block (procedure) for which the next block (procedure) will be invoked remotely.";
 
     let description = [{
-        This op terminates the block and signifies the need to await a rmeote decision
-        handing over flow control to another component of the system
+        This op terminates the block and signifies the need to receive and execute a remote block
+        call handing over flow control to another component of the system
 
         Example:
         ```mlir
         ^bb2:
         %2 = call @someFn()
-        qcf.await_rbc
+        qcf.recv_rpc
         ```
     }];
 
