@@ -342,5 +342,25 @@ def QCS_AwaitRemoteProcedureCallOp : QCS_Op<"await_rpc", [
         }];
 }
 
+def QCS_ExecuteRemoteProcedureCallOp : QCS_Op<"execute_rpc", [MemRefsNormalizable]> {
+    let summary = "Execute a remote procedure call invoked from another component in the system.";
+
+    let description = [{
+        This op executes a remote procedure call that has send by another component in the system
+
+        Example:
+        ```mlir
+        ^bb2:
+        qcf.execute_rpc
+        // Do RPC codegen
+        qcf.await_rpc // Wait for next RPC event
+        ```
+    }];
+
+    let assemblyFormat = [{
+        attr-dict
+    }];
+}
+
 
 #endif // QCS_OPS
