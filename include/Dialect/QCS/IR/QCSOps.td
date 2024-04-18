@@ -321,7 +321,7 @@ def QCS_SendRemoteProcedureCallOp : QCS_Op<"send_rpc", [MemRefsNormalizable]> {
     }];
 }
 
-def QCS_ReceiveRemoteProcedureCallOp : QCS_Op<"recv_rpc", [
+def QCS_AwaitRemoteProcedureCallOp : QCS_Op<"await_rpc", [
     Terminator, Pure]> {
     let summary = "A pseudo-op that signifies the end of a block (procedure) for which the next block (procedure) will be invoked remotely.";
 
@@ -333,7 +333,7 @@ def QCS_ReceiveRemoteProcedureCallOp : QCS_Op<"recv_rpc", [
         ```mlir
         ^bb2:
         %2 = call @someFn()
-        qcf.recv_rpc
+        qcf.await_rpc
         ```
     }];
 
