@@ -31,6 +31,9 @@ include "Dialect/QUIR/IR/QUIRTypeConstraints.td"
 include "Dialect/QCS/IR/QCSBase.td"
 
 include "mlir/Dialect/LLVMIR/LLVMOpBase.td"
+include "mlir/Interfaces/CallInterfaces.td"
+include "mlir/Interfaces/ControlFlowInterfaces.td"
+include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 
 // Define a side effect that identifies an operation as not dead while not
@@ -361,6 +364,159 @@ def QCS_ExecuteRemoteProcedureCallOp : QCS_Op<"execute_rpc", [MemRefsNormalizabl
         attr-dict
     }];
 }
+
+def QCS_RemoteProcedureOp : QCS_Op<"remote_procedure", [
+  AutomaticAllocationScope, CallableOpInterface,
+  FunctionOpInterface, Symbol
+]> {
+  let summary = "An operation with a name containing a single `SSACFG` region corresponding to a remote procedure sequence";
+  let description = [{
+
+    Defines a remote sequence(function) operation representing a
+    deterministically timed pulse sequence execution
+    on the QPU *without* any classical compute or control-flow.
+    Effectively corresponding to a callable "pulse sequence block".
+
+    The RemoteProcedureOp is modelled after the FuncOp of the MLIR func
+    dialect.
+
+    A sequence may only contain operations legally allowed by the pulse
+    dialect. All pulse-type operations should in-turn exist within regions
+    contained by `pulse.sequence` operations.
+
+    All non-constant classical values required to define the sequence must
+    be provided as `pulse.sequence` arguments to allow a clean separation of
+    classical, quantum and pulse value-passing processes within the MLIR.
+
+    Pulse programs should be canonicalized such that all pulse
+    operations occurr within a region contained by a `pulse.sequence` operation
+    and are reached through a corresponding `qcs.remote_procedure`.
+
+    Operations within the sequence cannot may capture values from outside its scope
+    such as channel definitions. It is not isolated from above
+
+    Syntax:
+
+    ```
+    op ::= `qcf.remote_prodedure` symbol-ref-id `(` argument-list `)` (`->`
+    function-result-list)? function-attributes? region
+    ```
+
+    Example:
+
+    ```mlir
+    // External sequence function definitions.
+    qcs.remote_procedure @x() {
+        %0 = qcs.remote_procedure @measure_0(%arg2, %arg3, %arg4, %arg0) {pulse.acquireAt = 1056 : i64, pulse.timepoint = -8000 : i64, quir.noFastPathComm, quir.noJunoComm, quir.noJunoUse} : (!pulse.mixed_frame, !pulse.waveform, !pulse.mixed_frame, !pulse.mixed_frame) -> i1
+        qcs.return
+    }
+    ```
+  }];
+
+  let arguments = (ins SymbolNameAttr:$sym_name,
+                       TypeAttrOf<FunctionType>:$function_type,
+                       OptionalAttr<StrAttr>:$sym_visibility,
+                       OptionalAttr<DictArrayAttr>:$arg_attrs,
+                       OptionalAttr<DictArrayAttr>:$res_attrs);
+  let regions = (region AnyRegion:$body);
+
+  let builders = [OpBuilder<(ins
+    "StringRef":$name, "FunctionType":$type,
+    CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs,
+    CArg<"ArrayRef<DictionaryAttr>", "{}">:$argAttrs)
+    >];
+  let extraClassDeclaration = [{
+    static RemoteProcedureOp create(Location location, StringRef name, FunctionType type,
+                         ArrayRef<NamedAttribute> attrs = {});
+    static RemoteProcedureOp create(Location location, StringRef name, FunctionType type,
+                         Operation::dialect_attr_range attrs);
+    static RemoteProcedureOp create(Location location, StringRef name, FunctionType type,
+                         ArrayRef<NamedAttribute> attrs,
+                         ArrayRef<DictionaryAttr> argAttrs);
+
+    /// Create a deep copy of this sequence and all of its blocks, remapping any
+    /// operands that use values outside of the sequence using the map that is
+    /// provided (leaving them alone if no entry is present). If the mapper
+    /// contains entries for sequence arguments, these arguments are not
+    /// included in the new sequence. Replaces references to cloned sub-values
+    /// with the corresponding value that is copied, and adds those mappings to
+    /// the mapper.
+    RemoteProcedureOp clone(IRMapping &mapper);
+    RemoteProcedureOp clone();
+
+    /// Clone the internal blocks and attributes from this sequence into dest.
+    /// Any cloned blocks are appended to the back of dest. This sequence
+    /// asserts that the attributes of the current sequence and dest are
+    /// compatible.
+    void cloneInto(RemoteProcedureOp dest, IRMapping &mapper);
+
+    //===------------------------------------------------------------------===//
+    // CallableOpInterface
+    //===------------------------------------------------------------------===//
+
+    /// Returns the region on the current operation that is callable. This may
+    /// return null in the case of an external callable object, e.g. an external
+    /// function.
+    ::mlir::Region *getCallableRegion() { return isExternal() ? nullptr : &getBody(); }
+
+    /// Returns the results types that the callable region produces when
+    /// executed.
+    ArrayRef<Type> getCallableResults() { return getFunctionType().getResults(); }
+
+    /// Returns the argument attributes for all callable region arguments or
+    /// null if there are none.
+    ::mlir::ArrayAttr getCallableArgAttrs() {
+      return getArgAttrs().value_or(nullptr);
+    }
+
+    /// Returns the result attributes for all callable region results or
+    /// null if there are none.
+    ::mlir::ArrayAttr getCallableResAttrs() {
+      return getResAttrs().value_or(nullptr);
+    }
+
+    //===------------------------------------------------------------------===//
+    // FunctionOpInterface Methods
+    //===------------------------------------------------------------------===//
+
+    /// Returns the argument types of this function.
+    ArrayRef<Type> getArgumentTypes() { return getFunctionType().getInputs(); }
+
+    /// Returns the result types of this function.
+    ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
+
+    //===------------------------------------------------------------------===//
+    // SymbolOpInterface Methods
+    //===------------------------------------------------------------------===//
+
+    bool isDeclaration() { return isExternal(); }
+  }];
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+
+}
+
+def QCS_ReturnOp : QCS_Op<"return", [Pure, Terminator, ReturnLike]>,
+    Arguments<(ins Variadic<AnyClassical>:$operands)>, Results<(outs)> {
+        let summary = "Terminator for qcs.remote_procedure.";
+        let description = [{
+                A terminator for regions that appear in the body of the `pulse.remote_procedure`
+                operation. The operands to the `pulse.return` are the result values
+                that are returned to the `qcs.remote_procedure` invocation of the target sequence.
+
+                Example:
+
+                ```mlir
+                qcs.remote_procedure @foo(%angle: quir.angle<32>) -> (i1, i1)
+                    ...
+                    qcs.return %0, %1: i1, i1
+                }
+            }];
+        let builders = [OpBuilder<(ins), [{ build($_builder, $_state, std::nullopt); }]>];
+        let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
+        let hasVerifier = 1;
+}
+
 
 
 #endif // QCS_OPS

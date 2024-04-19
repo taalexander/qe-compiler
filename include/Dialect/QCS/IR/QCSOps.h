@@ -29,7 +29,12 @@
 
 #include "Dialect/QCS/IR/QCSTypes.h"
 
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/FunctionInterfaces.h"
 #include "mlir/IR/SymbolTable.h"
+#include "mlir/Interfaces/CallInterfaces.h"
+#include "mlir/Interfaces/ControlFlowInterfaces.h"
+
 #include "llvm/ADT/StringMap.h"
 
 #define GET_OP_CLASSES
