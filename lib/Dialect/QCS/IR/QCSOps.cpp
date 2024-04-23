@@ -191,21 +191,21 @@ void ParallelEndOp::print(mlir::OpAsmPrinter &printer) {
 }
 
 //===----------------------------------------------------------------------===//
-// ExecuteRemoteProcedureCallOp
+// LaunchDistributedProcedureOp
 //===----------------------------------------------------------------------===//
 
-auto ExecuteRemoteProcedureCallOp::getCalleeType() -> FunctionType {
+auto LaunchDistributedProcedureOp ::getCalleeType() -> FunctionType {
   return FunctionType::get(getContext(), getOperandTypes(), getResultTypes());
 }
 
-LogicalResult ExecuteRemoteProcedureCallOp::verifySymbolUses(
+LogicalResult LaunchDistributedProcedureOp ::verifySymbolUses(
     SymbolTableCollection &symbolTable) {
 
   auto procedureAttr = (*this)->getAttrOfType<FlatSymbolRefAttr>("callee");
   if (!procedureAttr)
     return emitOpError("Requires a 'callee' symbol reference attribute");
 
-  auto procedure = symbolTable.lookupNearestSymbolFrom<RemoteProcedureOp>(
+  auto procedure = symbolTable.lookupNearestSymbolFrom<DistributedProcedureOp>(
       *this, procedureAttr);
   if (!procedure)
     return emitOpError() << "'" << procedureAttr.getValue()
@@ -244,69 +244,49 @@ LogicalResult ExecuteRemoteProcedureCallOp::verifySymbolUses(
 }
 
 //===----------------------------------------------------------------------===//
-// ConstantOp
+// LaunchDistributedOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult ConstantOp::verify() {
-  StringRef fnName = getValue();
-  Type type = getType();
+void LaunchDistributedOp::build(OpBuilder &builder, OperationState &result) {
+  // Create a procedure body region
+  Region *kernelRegion = result.addRegion();
+  Block *body = new Block();
+  kernelRegion->push_back(body);
+}
 
-  // Try to find the referenced function.
-  auto fn =
-      (*this)->getParentOfType<ModuleOp>().lookupSymbol<RemoteProcedureOp>(
-          fnName);
-  if (!fn)
-    return emitOpError() << "reference to undefined remote procedure '"
-                         << fnName << "'";
+LogicalResult LaunchDistributedOp::verifyRegions() {
 
-  // Check that the referenced function has the correct type.
-  if (fn.getFunctionType() != type)
-    return emitOpError("reference to remote procedure with mismatched type");
+  // Block terminators without successors are expected to exit the kernel region
+  // and must be `qcs.terminator`.
+  for (Block &block : getBody()) {
+    if (block.empty())
+      continue;
+    if (block.back().getNumSuccessors() != 0)
+      continue;
+    if (!isa<qcs::TerminatorOp>(&block.back())) {
+      return block.back()
+          .emitError()
+          .append("expected '", qcs::TerminatorOp::getOperationName(),
+                  "' or a terminator with successors")
+          .attachNote(getLoc())
+          .append("in '", LaunchDistributedOp::getOperationName(),
+                  "' body region");
+    }
+  }
 
   return success();
 }
 
-OpFoldResult ConstantOp::fold(FoldAdaptor adaptor) { return getValueAttr(); }
-
-void ConstantOp::getAsmResultNames(
-    function_ref<void(Value, StringRef)> setNameFn) {
-  setNameFn(getResult(), "f");
-}
-
-bool ConstantOp::isBuildableWith(Attribute value, Type type) {
-  return llvm::isa<FlatSymbolRefAttr>(value) && llvm::isa<FunctionType>(type);
-}
-
 //===----------------------------------------------------------------------===//
-// ExecuteRemoteProcedureCallIndirectOp
-//===----------------------------------------------------------------------===//
-
-/// Fold indirect calls that have a constant function as the callee operand.
-LogicalResult ExecuteRemoteProcedureCallIndirectOp::canonicalize(
-    ExecuteRemoteProcedureCallIndirectOp indirectCall,
-    mlir::PatternRewriter &rewriter) {
-  // Check that the callee is a constant callee.
-  SymbolRefAttr calledFn;
-  if (!matchPattern(indirectCall.getCallee(), m_Constant(&calledFn)))
-    return failure();
-
-  // Replace with a direct call.
-  rewriter.replaceOpWithNewOp<ExecuteRemoteProcedureCallOp>(
-      indirectCall, calledFn, indirectCall.getResultTypes(),
-      indirectCall.getArgOperands());
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// RemoteProcedureOp
+// DistributedProcedureOp
 //
 // This code section was derived and modified from the LLVM project FuncOp
 // Consequently it is licensed as Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
-mlir::ParseResult RemoteProcedureOp::parse(mlir::OpAsmParser &parser,
-                                           mlir::OperationState &result) {
+mlir::ParseResult DistributedProcedureOp::parse(mlir::OpAsmParser &parser,
+                                                mlir::OperationState &result) {
   auto buildFuncType =
       [](Builder &builder, ArrayRef<Type> argTypes, ArrayRef<Type> results,
          function_interface_impl::VariadicFlag,
@@ -318,7 +298,7 @@ mlir::ParseResult RemoteProcedureOp::parse(mlir::OpAsmParser &parser,
       getArgAttrsAttrName(result.name), getResAttrsAttrName(result.name));
 }
 
-void RemoteProcedureOp::print(mlir::OpAsmPrinter &printer) {
+void DistributedProcedureOp::print(mlir::OpAsmPrinter &printer) {
   function_interface_impl::printFunctionOp(
       printer, *this, /*isVariadic=*/false, getFunctionTypeAttrName(),
       getArgAttrsAttrName(), getResAttrsAttrName());
@@ -326,7 +306,7 @@ void RemoteProcedureOp::print(mlir::OpAsmPrinter &printer) {
 
 namespace {
 /// Verify the argument list and entry block are in agreement.
-LogicalResult verifyArgumentAndEntry_(RemoteProcedureOp op) {
+LogicalResult verifyArgumentAndEntry_(DistributedProcedureOp op) {
   auto fnInputTypes = op.getFunctionType().getInputs();
   Block &entryBlock = op.front();
   for (unsigned i = 0; i != entryBlock.getNumArguments(); ++i)
@@ -339,7 +319,7 @@ LogicalResult verifyArgumentAndEntry_(RemoteProcedureOp op) {
 }
 } // anonymous namespace
 
-LogicalResult RemoteProcedureOp::verify() {
+LogicalResult DistributedProcedureOp::verify() {
   // If external will be linked in later and nothing to do
   if (isExternal())
     return success();
@@ -350,33 +330,34 @@ LogicalResult RemoteProcedureOp::verify() {
   return success();
 }
 
-RemoteProcedureOp RemoteProcedureOp::create(Location location, StringRef name,
-                                            FunctionType type,
-                                            ArrayRef<NamedAttribute> attrs) {
+DistributedProcedureOp
+DistributedProcedureOp::create(Location location, StringRef name,
+                               FunctionType type,
+                               ArrayRef<NamedAttribute> attrs) {
   OpBuilder builder(location->getContext());
   OperationState state(location, getOperationName());
-  RemoteProcedureOp::build(builder, state, name, type, attrs);
-  return cast<RemoteProcedureOp>(Operation::create(state));
+  DistributedProcedureOp::build(builder, state, name, type, attrs);
+  return cast<DistributedProcedureOp>(Operation::create(state));
 }
-RemoteProcedureOp
-RemoteProcedureOp::create(Location location, StringRef name, FunctionType type,
-                          Operation::dialect_attr_range attrs) {
+DistributedProcedureOp
+DistributedProcedureOp::create(Location location, StringRef name,
+                               FunctionType type,
+                               Operation::dialect_attr_range attrs) {
   SmallVector<NamedAttribute, 8> const attrRef(attrs);
   return create(location, name, type, attrRef);
 }
-RemoteProcedureOp RemoteProcedureOp::create(Location location, StringRef name,
-                                            FunctionType type,
-                                            ArrayRef<NamedAttribute> attrs,
-                                            ArrayRef<DictionaryAttr> argAttrs) {
-  RemoteProcedureOp circ = create(location, name, type, attrs);
+DistributedProcedureOp DistributedProcedureOp::create(
+    Location location, StringRef name, FunctionType type,
+    ArrayRef<NamedAttribute> attrs, ArrayRef<DictionaryAttr> argAttrs) {
+  DistributedProcedureOp circ = create(location, name, type, attrs);
   circ.setAllArgAttrs(argAttrs);
   return circ;
 }
 
-void RemoteProcedureOp::build(OpBuilder &builder, OperationState &state,
-                              StringRef name, FunctionType type,
-                              ArrayRef<NamedAttribute> attrs,
-                              ArrayRef<DictionaryAttr> argAttrs) {
+void DistributedProcedureOp::build(OpBuilder &builder, OperationState &state,
+                                   StringRef name, FunctionType type,
+                                   ArrayRef<NamedAttribute> attrs,
+                                   ArrayRef<DictionaryAttr> argAttrs) {
   state.addAttribute(SymbolTable::getSymbolAttrName(),
                      builder.getStringAttr(name));
   state.addAttribute(getFunctionTypeAttrName(state.name), TypeAttr::get(type));
@@ -393,7 +374,8 @@ void RemoteProcedureOp::build(OpBuilder &builder, OperationState &state,
 
 /// Clone the internal blocks and attributes from this procedure to the
 /// destination procedure.
-void RemoteProcedureOp::cloneInto(RemoteProcedureOp dest, IRMapping &mapper) {
+void DistributedProcedureOp::cloneInto(DistributedProcedureOp dest,
+                                       IRMapping &mapper) {
   // Add the attributes of this function to dest.
   llvm::MapVector<StringAttr, Attribute> newAttrMap;
   for (const auto &attr : dest->getAttrs())
@@ -416,7 +398,7 @@ void RemoteProcedureOp::cloneInto(RemoteProcedureOp dest, IRMapping &mapper) {
 /// Using the provider mapper. Replace references to
 /// cloned sub-values with the corresponding copied value and
 /// add to the mapper
-RemoteProcedureOp RemoteProcedureOp::clone(IRMapping &mapper) {
+DistributedProcedureOp DistributedProcedureOp::clone(IRMapping &mapper) {
   FunctionType newType = getFunctionType();
 
   // If the function contains a body, then its possible arguments
@@ -433,8 +415,8 @@ RemoteProcedureOp RemoteProcedureOp::clone(IRMapping &mapper) {
   }
 
   // Create the new procedure
-  RemoteProcedureOp newSeq =
-      cast<RemoteProcedureOp>(getOperation()->cloneWithoutRegions());
+  DistributedProcedureOp newSeq =
+      cast<DistributedProcedureOp>(getOperation()->cloneWithoutRegions());
   newSeq.setType(newType);
 
   // Clone the current function into the new one and return.
@@ -442,7 +424,7 @@ RemoteProcedureOp RemoteProcedureOp::clone(IRMapping &mapper) {
   return newSeq;
 }
 
-RemoteProcedureOp RemoteProcedureOp::clone() {
+DistributedProcedureOp DistributedProcedureOp::clone() {
   IRMapping mapper;
   return clone(mapper);
 }
@@ -456,7 +438,7 @@ RemoteProcedureOp RemoteProcedureOp::clone() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult ReturnOp::verify() {
-  auto procedure = (*this)->getParentOfType<RemoteProcedureOp>();
+  auto procedure = (*this)->getParentOfType<DistributedProcedureOp>();
   FunctionType const procedureType = procedure.getFunctionType();
 
   auto numResults = procedureType.getNumResults();

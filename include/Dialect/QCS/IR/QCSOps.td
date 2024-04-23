@@ -352,77 +352,10 @@ def QCS_ParameterLoadOp : QCS_Op<"parameter_load",
 }
 
 //===----------------------------------------------------------------------===//
-// ConstantOp
-//===----------------------------------------------------------------------===//
-
-def QCS_ConstantOp : QCS_Op<"constant",
-    [ConstantLike, Pure,
-     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {
-  let summary = "constant";
-  let description = [{
-    The `qcs.constant` operation produces an SSA value from a symbol reference
-    to a `qcs.remote_procedure` operation
-
-    Example:
-
-    ```mlir
-    // Reference to remote procedure @myfn.
-    %2 = qcs.constant @myprocedure : (f32) -> f32
-
-    // Equivalent generic forms
-    %2 = "qcs.constant"() { value = @myprocedure } : () -> (f32) -> f32
-    ```
-
-    MLIR does not allow direct references to functions in SSA operands because
-    the compiler is multithreaded, and disallowing SSA values to directly
-    reference a function simplifies this.
-  }];
-
-  let arguments = (ins FlatSymbolRefAttr:$value);
-  let results = (outs AnyType);
-  let assemblyFormat = "attr-dict $value `:` type(results)";
-
-  let extraClassDeclaration = [{
-    /// Returns true if a constant operation can be built with the given value
-    /// and result type.
-    static bool isBuildableWith(Attribute value, Type type);
-  }];
-
-  let hasFolder = 1;
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// SendRemoteProcedureCallOp
-//===----------------------------------------------------------------------===//
-
-def QCS_SendRemoteProcedureCallOp : QCS_Op<"send_rpc", [MemRefsNormalizable]> {
-    let summary = "Send a remote procedure call to another component in the system.";
-
-    let description = [{
-        This op sends a remote procedure call to another component in the system by idenfitier.
-
-        Example:
-        ```mlir
-        ^bb2:
-        %2 = call @someFn()
-        qcf.send_rpc
-        ```
-    }];
-
-    let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$operands);
-    let results = (outs Variadic<AnyType>);
-
-    let assemblyFormat = [{
-        $callee `(` $operands `)` attr-dict `:` functional-type($operands, results)
-    }];
-}
-
-//===----------------------------------------------------------------------===//
 // AwaitRemoteProcedureCallOp
 //===----------------------------------------------------------------------===//
 
-def QCS_AwaitRemoteProcedureCallOp : QCS_Op<"await_rpc", [
+def QCS_AwaitRemoteProcedureCallOp : QCS_Op<"await", [
     Terminator, Pure]> {
     let summary = "A pseudo-op that signifies the end of a block (procedure) for which the next block (procedure) will be invoked remotely.";
 
@@ -444,13 +377,13 @@ def QCS_AwaitRemoteProcedureCallOp : QCS_Op<"await_rpc", [
 }
 
 //===----------------------------------------------------------------------===//
-// ExecuteRemoteProcedureCallOp
+// LaunchDistributedProcedureOp
 //===----------------------------------------------------------------------===//
 
-def QCS_ExecuteRemoteProcedureCallOp : QCS_Op<"execute_rpc", [CallOpInterface, MemRefsNormalizable, DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+def QCS_LaunchDistributedProcedureOp : QCS_Op<"launch_distributed_procedure", [CallOpInterface, MemRefsNormalizable, DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
     let summary = "Execute a remote procedure call";
     let description = [{
-        The `qcs.execute_rpc` operation represents the launching of a remote procedure in the target system.
+        The `qcs.launch_distributed_procedure` operation represents the launching of a an async remote procedure in the target system.
         The callee function is attached to a symbol reference via an attribute. The arguments list must match
         the argument types provided by the callee. All classical input values to the sequence
         should be transferred before the invocation of the sequence routine to enable deterministic and
@@ -458,13 +391,13 @@ def QCS_ExecuteRemoteProcedureCallOp : QCS_Op<"execute_rpc", [CallOpInterface, M
 
         Example:
         ```mlir
-        qcs.remote_procedure @sequence0() -> i1 {
+        qcs.distributed_procedure @sequence0() -> i1 {
             %23 = pulse.call_sequence @circuit_0_sequence() {pulse.duration = 8264 : i64, pulse.timepoint = 8264 : i64} : (!pulse.mixed_frame, !pulse.waveform, !pulse.mixed_frame, !pulse.waveform, !pulse.mixed_frame) -> i1
             qcs.return %23
         }
 
         func.func @main() {
-            %classical_result = pulse.execute_rpc @sequence0() : () -> (i1)
+            %classical_result = pulse.launch_distributed_procedure @sequence0() : () -> (i1)
         }
         ```
     }];
@@ -477,7 +410,7 @@ def QCS_ExecuteRemoteProcedureCallOp : QCS_Op<"execute_rpc", [CallOpInterface, M
     }];
 
     let builders = [
-        OpBuilder<(ins "RemoteProcedureOp":$callee, CArg<"ValueRange", "{}">:$operands), [{
+        OpBuilder<(ins "DistributedProcedureOp":$callee, CArg<"ValueRange", "{}">:$operands), [{
             $_state.addOperands(operands);
             $_state.addAttribute("callee",SymbolRefAttr::get(callee));
             $_state.addTypes(callee.getFunctionType().getResults());
@@ -522,82 +455,10 @@ def QCS_ExecuteRemoteProcedureCallOp : QCS_Op<"execute_rpc", [CallOpInterface, M
 }
 
 //===----------------------------------------------------------------------===//
-// ExecuteRemoteProcedureCallIndirectOp
+// DistributedProcedureOp
 //===----------------------------------------------------------------------===//
 
-def QCS_ExecuteRemoteProcedureCallIndirectOp : QCS_Op<"execute_rpc_indirect", [
-      CallOpInterface,
-      TypesMatchWith<"callee input types match argument types",
-                     "callee", "callee_operands",
-                     "::llvm::cast<FunctionType>($_self).getInputs()">,
-      TypesMatchWith<"callee result types match result types",
-                     "callee", "results",
-                     "::llvm::cast<FunctionType>($_self).getResults()">
-    ]> {
-  let summary = "indirect execute remote procedure call operation";
-  let description = [{
-    The `qcs.execute_rpc_indirect` operation represents an indirect call to a value
-    of a remote procedure type. The operands and result types of the call must match the
-    specified remote procedure type.
-
-    Function values can be created with the
-    [`func.constant` operation](#funcconstant-constantop).
-
-    Example:
-
-    ```mlir
-    %func = qcs.constant @my_func : (i32) -> i32
-    %result = qcs.execute_rpc_indirect %func(%0) : (i32) -> i32
-    ```
-  }];
-
-  let arguments = (ins FunctionType:$callee,
-                       Variadic<AnyClassical>:$callee_operands);
-  let results = (outs Variadic<AnyClassical>:$results);
-
-  let builders = [
-    OpBuilder<(ins "Value":$callee, CArg<"ValueRange", "{}">:$operands), [{
-      $_state.operands.push_back(callee);
-      $_state.addOperands(operands);
-      $_state.addTypes(::llvm::cast<FunctionType>(callee.getType()).getResults());
-    }]>];
-
-  let extraClassDeclaration = [{
-    // TODO: Remove once migrated callers.
-    ValueRange operands() { return getCalleeOperands(); }
-
-    /// Get the argument operands to the called function.
-    operand_range getArgOperands() {
-      return {arg_operand_begin(), arg_operand_end()};
-    }
-
-    MutableOperandRange getArgOperandsMutable() {
-      return getCalleeOperandsMutable();
-    }
-
-    operand_iterator arg_operand_begin() { return ++operand_begin(); }
-    operand_iterator arg_operand_end() { return operand_end(); }
-
-    /// Return the callee of this operation.
-    CallInterfaceCallable getCallableForCallee() { return getCallee(); }
-
-    /// Set the callee for this operation.
-    void setCalleeFromCallable(CallInterfaceCallable callee) {
-      setOperand(0, callee.get<Value>());
-    }
-  }];
-
-  let hasCanonicalizeMethod = 1;
-  let assemblyFormat = [{
-    $callee `(` $callee_operands `)` attr-dict `:` type($callee)
-  }];
-}
-
-//===----------------------------------------------------------------------===//
-// RemoteProcedureOp
-//===----------------------------------------------------------------------===//
-
-def QCS_RemoteProcedureOp : QCS_Op<"remote_procedure", [
+def QCS_DistributedProcedureOp : QCS_Op<"distributed_procedure", [
   AutomaticAllocationScope, CallableOpInterface,
   FunctionOpInterface, Symbol
 ]> {
@@ -609,7 +470,7 @@ def QCS_RemoteProcedureOp : QCS_Op<"remote_procedure", [
     on the QPU *without* any classical compute or control-flow.
     Effectively corresponding to a callable "pulse sequence block".
 
-    The RemoteProcedureOp is modelled after the FuncOp of the MLIR func
+    The DistributedProcedureOp is modelled after the FuncOp of the MLIR func
     dialect.
 
     A sequence may only contain operations legally allowed by the pulse
@@ -622,7 +483,7 @@ def QCS_RemoteProcedureOp : QCS_Op<"remote_procedure", [
 
     Pulse programs should be canonicalized such that all pulse
     operations occurr within a region contained by a `pulse.sequence` operation
-    and are reached through a corresponding `qcs.remote_procedure`.
+    and are reached through a corresponding `qcs.distributed_procedure`.
 
     Operations within the sequence cannot may capture values from outside its scope
     such as channel definitions. It is not isolated from above
@@ -630,7 +491,7 @@ def QCS_RemoteProcedureOp : QCS_Op<"remote_procedure", [
     Syntax:
 
     ```
-    op ::= `qcf.remote_prodedure` symbol-ref-id `(` argument-list `)` (`->`
+    op ::= `qcf.distributed_procedure` symbol-ref-id `(` argument-list `)` (`->`
     function-result-list)? function-attributes? region
     ```
 
@@ -638,8 +499,8 @@ def QCS_RemoteProcedureOp : QCS_Op<"remote_procedure", [
 
     ```mlir
     // External sequence function definitions.
-    qcs.remote_procedure @x() {
-        %0 = qcs.remote_procedure @measure_0(%arg2, %arg3, %arg4, %arg0) {pulse.acquireAt = 1056 : i64, pulse.timepoint = -8000 : i64, quir.noFastPathComm, quir.noJunoComm, quir.noJunoUse} : (!pulse.mixed_frame, !pulse.waveform, !pulse.mixed_frame, !pulse.mixed_frame) -> i1
+    qcs.distributed_procedure @x() {
+        %0 = qcs.distributed_procedure @measure_0(%arg2, %arg3, %arg4, %arg0) {pulse.acquireAt = 1056 : i64, pulse.timepoint = -8000 : i64, quir.noFastPathComm, quir.noJunoComm, quir.noJunoUse} : (!pulse.mixed_frame, !pulse.waveform, !pulse.mixed_frame, !pulse.mixed_frame) -> i1
         qcs.return
     }
     ```
@@ -660,11 +521,11 @@ def QCS_RemoteProcedureOp : QCS_Op<"remote_procedure", [
     CArg<"ArrayRef<DictionaryAttr>", "{}">:$argAttrs)
     >];
   let extraClassDeclaration = [{
-    static RemoteProcedureOp create(Location location, StringRef name, FunctionType type,
+    static DistributedProcedureOp create(Location location, StringRef name, FunctionType type,
                          ArrayRef<NamedAttribute> attrs = {});
-    static RemoteProcedureOp create(Location location, StringRef name, FunctionType type,
+    static DistributedProcedureOp create(Location location, StringRef name, FunctionType type,
                          Operation::dialect_attr_range attrs);
-    static RemoteProcedureOp create(Location location, StringRef name, FunctionType type,
+    static DistributedProcedureOp create(Location location, StringRef name, FunctionType type,
                          ArrayRef<NamedAttribute> attrs,
                          ArrayRef<DictionaryAttr> argAttrs);
 
@@ -675,14 +536,14 @@ def QCS_RemoteProcedureOp : QCS_Op<"remote_procedure", [
     /// included in the new sequence. Replaces references to cloned sub-values
     /// with the corresponding value that is copied, and adds those mappings to
     /// the mapper.
-    RemoteProcedureOp clone(IRMapping &mapper);
-    RemoteProcedureOp clone();
+    DistributedProcedureOp clone(IRMapping &mapper);
+    DistributedProcedureOp clone();
 
     /// Clone the internal blocks and attributes from this sequence into dest.
     /// Any cloned blocks are appended to the back of dest. This sequence
     /// asserts that the attributes of the current sequence and dest are
     /// compatible.
-    void cloneInto(RemoteProcedureOp dest, IRMapping &mapper);
+    void cloneInto(DistributedProcedureOp dest, IRMapping &mapper);
 
     //===------------------------------------------------------------------===//
     // CallableOpInterface
@@ -732,7 +593,51 @@ def QCS_RemoteProcedureOp : QCS_Op<"remote_procedure", [
 
 }
 
+//===----------------------------------------------------------------------===//
+//  LaunchDistributedOp
+//===----------------------------------------------------------------------===//
 
+def QCS_LaunchDistributedOp : QCS_Op<"launch_distributed", [
+      AutomaticAllocationScope, RecursiveMemoryEffects, SingleBlockImplicitTerminator<"qcs::TerminatorOp">]>,
+    Arguments<(ins)>, Results<(outs)> {
+  let summary = "QCS remote procedure launch operation";
+
+  let description = [{
+    Asynchronously launch a distributed remote procedure defined in the quantum
+    control system. The body of the kernel is defined by the single region that this
+    operation contains. The `qcs.launch_distributed` operation may be defined inline
+    and reuse values from above.
+
+    This operation is modelled on the gpu launch operation.
+
+    Operations contained within a launch distributed region must be valid a valid
+    globally distributed command.
+
+    Syntax:
+
+    ```
+    operation ::= `qcs.launch_distributed` attr-dict-with-keyword? region
+    ```
+
+    Example:
+
+    ```mlir
+    qcs.launch_distributed {
+        %23 = pulse.call_sequence @circuit_0_sequence() {pulse.duration = 8264 : i64, pulse.timepoint = 8264 : i64} : (!pulse.mixed_frame, !pulse.waveform, !pulse.mixed_frame, !pulse.waveform, !pulse.mixed_frame) -> i1
+        qcs.finalize
+    }
+
+  }];
+
+  let regions = (region SizedRegion<1>:$body);
+
+  let builders = [
+    OpBuilder<(ins)>
+  ];
+
+  let assemblyFormat = "attr-dict-with-keyword regions";
+  let hasRegionVerifier = 1;
+}
 
 //===----------------------------------------------------------------------===//
 // ReturnOp
@@ -740,16 +645,16 @@ def QCS_RemoteProcedureOp : QCS_Op<"remote_procedure", [
 
 def QCS_ReturnOp : QCS_Op<"return", [Pure, Terminator, ReturnLike]>,
     Arguments<(ins Variadic<AnyClassical>:$operands)>, Results<(outs)> {
-        let summary = "Terminator for qcs.remote_procedure.";
+        let summary = "Terminator for qcs.distributed_procedure.";
         let description = [{
-                A terminator for regions that appear in the body of the `pulse.remote_procedure`
-                operation. The operands to the `pulse.return` are the result values
-                that are returned to the `qcs.remote_procedure` invocation of the target sequence.
+                A terminator for regions that appear in the body of the `qcs.distributed_procedure`
+                operation. The operands to the `qcs.return` are the result values
+                that are returned to the `qcs.distributed_procedure` invocation of the target sequence.
 
                 Example:
 
                 ```mlir
-                qcs.remote_procedure @foo(%angle: quir.angle<32>) -> (i1, i1)
+                qcs.distributed_procedure @foo(%angle: quir.angle<32>) -> (i1, i1)
                     ...
                     qcs.return %0, %1: i1, i1
                 }
@@ -757,6 +662,23 @@ def QCS_ReturnOp : QCS_Op<"return", [Pure, Terminator, ReturnLike]>,
         let builders = [OpBuilder<(ins), [{ build($_builder, $_state, std::nullopt); }]>];
         let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
         let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// TerminatorOp
+//===----------------------------------------------------------------------===//
+
+def QCS_TerminatorOp : QCS_Op<"terminator", [HasParent<"LaunchDistributedOp">,
+                                             Pure, Terminator]>,
+    Arguments<(ins)>, Results<(outs)> {
+  let summary = "Terminator for QCS launch regions.";
+  let description = [{
+    A terminator operation for regions that appear in the body of `qcs.launch_distributed`
+    operation.  These regions are not expected to return any value so the
+    terminator takes no operands.
+  }];
+
+  let assemblyFormat = "attr-dict";
 }
 
 
