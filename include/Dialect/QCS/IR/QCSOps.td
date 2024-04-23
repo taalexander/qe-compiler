@@ -34,6 +34,7 @@ include "mlir/Dialect/LLVMIR/LLVMOpBase.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/IR/FunctionInterfaces.td"
+include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
 
 // Define a side effect that identifies an operation as not dead while not
@@ -44,6 +45,10 @@ include "mlir/IR/SymbolInterfaces.td"
 // see lib/Interfaces/SideEffectInterfaces.cpp:isTriviallyDeadImpl()
 // see lib/Dialect/Affine/Utils/Utils.cpp:hasNoInterveningEffect()
 def NonInterferingNonDeadSideEffect : MemoryEffects<[MemFree<DefaultResource>]>;
+
+//===----------------------------------------------------------------------===//
+// SystemInitOp
+//===----------------------------------------------------------------------===//
 
 def QCS_SystemInitOp : QCS_Op<"init", [IsolatedFromAbove]> {
     let summary = "Initializes the system";
@@ -56,6 +61,10 @@ def QCS_SystemInitOp : QCS_Op<"init", [IsolatedFromAbove]> {
     }];
 }
 
+//===----------------------------------------------------------------------===//
+// SystemFinalizeOp
+//===----------------------------------------------------------------------===//
+
 def QCS_SystemFinalizeOp : QCS_Op<"finalize", [IsolatedFromAbove]> {
     let summary = "Finalizes the system";
     let description = [{
@@ -66,6 +75,10 @@ def QCS_SystemFinalizeOp : QCS_Op<"finalize", [IsolatedFromAbove]> {
         attr-dict
     }];
 }
+
+//===----------------------------------------------------------------------===//
+// SynchronizeOp
+//===----------------------------------------------------------------------===//
 
 def QCS_SynchronizeOp : QCS_Op<"synchronize", [
             DeclareOpInterfaceMethods<QubitOpInterface, ["getOperatedQubits"]>,
@@ -85,6 +98,10 @@ def QCS_SynchronizeOp : QCS_Op<"synchronize", [
         $qubits attr-dict `:` functional-type($qubits, results)
     }];
 }
+
+//===----------------------------------------------------------------------===//
+// BroadcastOp
+//===----------------------------------------------------------------------===//
 
 def QCS_BroadcastOp : QCS_Op<"broadcast", [NonInterferingNonDeadSideEffect]> {
     let summary = "Broadcast a value from this controller to all others";
@@ -107,6 +124,10 @@ def QCS_BroadcastOp : QCS_Op<"broadcast", [NonInterferingNonDeadSideEffect]> {
         attr-dict $val `:` type($val)
     }];
 }
+
+//===----------------------------------------------------------------------===//
+// DelayCyclesOp
+//===----------------------------------------------------------------------===//
 
 // TODO: Should this be a "unitary op" at the system level?
 def QCS_DelayCyclesOp : QCS_Op<"delay_cycles", [
@@ -138,6 +159,10 @@ def IndexArrayAttr : TypedArrayAttrBase<IndexAttr,
   let constBuilderCall = "$_builder.getIndexArrayAttr($0)";
 }
 
+//===----------------------------------------------------------------------===//
+// SendOp
+//===----------------------------------------------------------------------===//
+
 def QCS_SendOp : QCS_Op<"send", [NonInterferingNonDeadSideEffect]> {
     let summary = "Send a classical value from this controller to another";
     let description = [{
@@ -157,6 +182,10 @@ def QCS_SendOp : QCS_Op<"send", [NonInterferingNonDeadSideEffect]> {
         attr-dict $val `to` $id `:` type($val)
     }];
 }
+
+//===----------------------------------------------------------------------===//
+// RecvOp
+//===----------------------------------------------------------------------===//
 
 def QCS_RecvOp : QCS_Op<"recv", [NonInterferingNonDeadSideEffect]> {
     let summary = "Receive classical values from other controllers";
@@ -178,6 +207,10 @@ def QCS_RecvOp : QCS_Op<"recv", [NonInterferingNonDeadSideEffect]> {
         attr-dict `:` type($vals)
     }];
 }
+
+//===----------------------------------------------------------------------===//
+// ParallelControlFlowOp
+//===----------------------------------------------------------------------===//
 
 def QCS_ParallelControlFlowOp : QCS_Op<"parallel_control_flow", [
                         SingleBlockImplicitTerminator<"ParallelEndOp">,
@@ -206,6 +239,10 @@ def QCS_ParallelControlFlowOp : QCS_Op<"parallel_control_flow", [
     let assemblyFormat = "$region attr-dict";
 }
 
+//===----------------------------------------------------------------------===//
+// ParallelEndOp
+//===----------------------------------------------------------------------===//
+
 def QCS_ParallelEndOp : QCS_Op<"parallel_control_flow_end", [
     Terminator, HasParent<"ParallelControlFlowOp">, Pure]> {
   let summary = "A pseudo-op that marks the end of a `qcs.parallel_control_flow` op.";
@@ -217,6 +254,10 @@ def QCS_ParallelEndOp : QCS_Op<"parallel_control_flow_end", [
   let hasCustomAssemblyFormat = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// ShotInitOp
+//===----------------------------------------------------------------------===//
+
 def QCS_ShotInitOp : QCS_Op<"shot_init", [IsolatedFromAbove]> {
     let summary = "Initialization for shots";
     let description = [{
@@ -227,6 +268,10 @@ def QCS_ShotInitOp : QCS_Op<"shot_init", [IsolatedFromAbove]> {
         attr-dict
     }];
 }
+
+//===----------------------------------------------------------------------===//
+// DeclareParameterOp
+//===----------------------------------------------------------------------===//
 
 def QCS_DeclareParameterOp : QCS_Op<"declare_parameter", [Symbol]> {
     let summary = "system input parameter subject to post compilation updates";
@@ -269,6 +314,10 @@ def QCS_DeclareParameterOp : QCS_Op<"declare_parameter", [Symbol]> {
     ];
 }
 
+//===----------------------------------------------------------------------===//
+// ParameterLoadOp
+//===----------------------------------------------------------------------===//
+
 def QCS_ParameterLoadOp : QCS_Op<"parameter_load",
                         [DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
     let summary = "Use the current value of a parameter";
@@ -302,6 +351,51 @@ def QCS_ParameterLoadOp : QCS_Op<"parameter_load",
     }];
 }
 
+//===----------------------------------------------------------------------===//
+// ConstantOp
+//===----------------------------------------------------------------------===//
+
+def QCS_ConstantOp : QCS_Op<"constant",
+    [ConstantLike, Pure,
+     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>]> {
+  let summary = "constant";
+  let description = [{
+    The `qcs.constant` operation produces an SSA value from a symbol reference
+    to a `qcs.remote_procedure` operation
+
+    Example:
+
+    ```mlir
+    // Reference to remote procedure @myfn.
+    %2 = qcs.constant @myprocedure : (f32) -> f32
+
+    // Equivalent generic forms
+    %2 = "qcs.constant"() { value = @myprocedure } : () -> (f32) -> f32
+    ```
+
+    MLIR does not allow direct references to functions in SSA operands because
+    the compiler is multithreaded, and disallowing SSA values to directly
+    reference a function simplifies this.
+  }];
+
+  let arguments = (ins FlatSymbolRefAttr:$value);
+  let results = (outs AnyType);
+  let assemblyFormat = "attr-dict $value `:` type(results)";
+
+  let extraClassDeclaration = [{
+    /// Returns true if a constant operation can be built with the given value
+    /// and result type.
+    static bool isBuildableWith(Attribute value, Type type);
+  }];
+
+  let hasFolder = 1;
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// SendRemoteProcedureCallOp
+//===----------------------------------------------------------------------===//
+
 def QCS_SendRemoteProcedureCallOp : QCS_Op<"send_rpc", [MemRefsNormalizable]> {
     let summary = "Send a remote procedure call to another component in the system.";
 
@@ -324,6 +418,10 @@ def QCS_SendRemoteProcedureCallOp : QCS_Op<"send_rpc", [MemRefsNormalizable]> {
     }];
 }
 
+//===----------------------------------------------------------------------===//
+// AwaitRemoteProcedureCallOp
+//===----------------------------------------------------------------------===//
+
 def QCS_AwaitRemoteProcedureCallOp : QCS_Op<"await_rpc", [
     Terminator, Pure]> {
     let summary = "A pseudo-op that signifies the end of a block (procedure) for which the next block (procedure) will be invoked remotely.";
@@ -345,25 +443,159 @@ def QCS_AwaitRemoteProcedureCallOp : QCS_Op<"await_rpc", [
         }];
 }
 
-def QCS_ExecuteRemoteProcedureCallOp : QCS_Op<"execute_rpc", [MemRefsNormalizable]> {
-    let summary = "Execute a remote procedure call invoked from another component in the system.";
+//===----------------------------------------------------------------------===//
+// ExecuteRemoteProcedureCallOp
+//===----------------------------------------------------------------------===//
 
+def QCS_ExecuteRemoteProcedureCallOp : QCS_Op<"execute_rpc", [CallOpInterface, MemRefsNormalizable, DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+    let summary = "Execute a remote procedure call";
     let description = [{
-        This op executes a remote procedure call that has send by another component in the system
+        The `qcs.execute_rpc` operation represents the launching of a remote procedure in the target system.
+        The callee function is attached to a symbol reference via an attribute. The arguments list must match
+        the argument types provided by the callee. All classical input values to the sequence
+        should be transferred before the invocation of the sequence routine to enable deterministic and
+        real-time execution in hardware.
 
         Example:
         ```mlir
-        ^bb2:
-        qcf.execute_rpc
-        // Do RPC codegen
-        qcf.await_rpc // Wait for next RPC event
+        qcs.remote_procedure @sequence0() -> i1 {
+            %23 = pulse.call_sequence @circuit_0_sequence() {pulse.duration = 8264 : i64, pulse.timepoint = 8264 : i64} : (!pulse.mixed_frame, !pulse.waveform, !pulse.mixed_frame, !pulse.waveform, !pulse.mixed_frame) -> i1
+            qcs.return %23
+        }
+
+        func.func @main() {
+            %classical_result = pulse.execute_rpc @sequence0() : () -> (i1)
+        }
         ```
     }];
 
+    let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyClassical>:$operands);
+    let results = (outs Variadic<AnyClassical>:$res);
+
     let assemblyFormat = [{
-        attr-dict
+        $callee `(` $operands `)` attr-dict `:` functional-type($operands, results)
+    }];
+
+    let builders = [
+        OpBuilder<(ins "RemoteProcedureOp":$callee, CArg<"ValueRange", "{}">:$operands), [{
+            $_state.addOperands(operands);
+            $_state.addAttribute("callee",SymbolRefAttr::get(callee));
+            $_state.addTypes(callee.getFunctionType().getResults());
+        }]>,
+        OpBuilder<(ins "SymbolRefAttr":$callee, "TypeRange":$res,
+        CArg<"ValueRange", "{}">:$operands), [{
+            $_state.addOperands(operands);
+            $_state.addAttribute("callee", callee);
+            $_state.addTypes(res);
+        }]>,
+        OpBuilder<(ins "StringRef":$callee, "TypeRange":$res,
+        CArg<"ValueRange", "{}">:$operands), [{
+            build($_builder, $_state, SymbolRefAttr::get($_builder.getContext(), callee), res,
+                    operands);
+        }]>];
+
+    let extraClassDeclaration = [{
+        FunctionType getCalleeType();
+
+        /// Get the argument operands to the called function.
+        operand_range getArgOperands() {
+            return {arg_operand_begin(), arg_operand_end()};
+        }
+
+        MutableOperandRange getArgOperandsMutable() {
+            return getOperandsMutable();
+        }
+
+        operand_iterator arg_operand_begin() { return operand_begin(); }
+        operand_iterator arg_operand_end() { return operand_end(); }
+
+        /// Return the callee of this operation.
+        CallInterfaceCallable getCallableForCallee() {
+            return (*this)->getAttrOfType<SymbolRefAttr>("callee");
+        }
+
+        /// Set the callee for this operation.
+        void setCalleeFromCallable(CallInterfaceCallable callee) {
+            (*this)->setAttr("callee", callee.get<SymbolRefAttr>());
+        }
     }];
 }
+
+//===----------------------------------------------------------------------===//
+// ExecuteRemoteProcedureCallIndirectOp
+//===----------------------------------------------------------------------===//
+
+def QCS_ExecuteRemoteProcedureCallIndirectOp : QCS_Op<"execute_rpc_indirect", [
+      CallOpInterface,
+      TypesMatchWith<"callee input types match argument types",
+                     "callee", "callee_operands",
+                     "::llvm::cast<FunctionType>($_self).getInputs()">,
+      TypesMatchWith<"callee result types match result types",
+                     "callee", "results",
+                     "::llvm::cast<FunctionType>($_self).getResults()">
+    ]> {
+  let summary = "indirect execute remote procedure call operation";
+  let description = [{
+    The `qcs.execute_rpc_indirect` operation represents an indirect call to a value
+    of a remote procedure type. The operands and result types of the call must match the
+    specified remote procedure type.
+
+    Function values can be created with the
+    [`func.constant` operation](#funcconstant-constantop).
+
+    Example:
+
+    ```mlir
+    %func = qcs.constant @my_func : (i32) -> i32
+    %result = qcs.execute_rpc_indirect %func(%0) : (i32) -> i32
+    ```
+  }];
+
+  let arguments = (ins FunctionType:$callee,
+                       Variadic<AnyClassical>:$callee_operands);
+  let results = (outs Variadic<AnyClassical>:$results);
+
+  let builders = [
+    OpBuilder<(ins "Value":$callee, CArg<"ValueRange", "{}">:$operands), [{
+      $_state.operands.push_back(callee);
+      $_state.addOperands(operands);
+      $_state.addTypes(::llvm::cast<FunctionType>(callee.getType()).getResults());
+    }]>];
+
+  let extraClassDeclaration = [{
+    // TODO: Remove once migrated callers.
+    ValueRange operands() { return getCalleeOperands(); }
+
+    /// Get the argument operands to the called function.
+    operand_range getArgOperands() {
+      return {arg_operand_begin(), arg_operand_end()};
+    }
+
+    MutableOperandRange getArgOperandsMutable() {
+      return getCalleeOperandsMutable();
+    }
+
+    operand_iterator arg_operand_begin() { return ++operand_begin(); }
+    operand_iterator arg_operand_end() { return operand_end(); }
+
+    /// Return the callee of this operation.
+    CallInterfaceCallable getCallableForCallee() { return getCallee(); }
+
+    /// Set the callee for this operation.
+    void setCalleeFromCallable(CallInterfaceCallable callee) {
+      setOperand(0, callee.get<Value>());
+    }
+  }];
+
+  let hasCanonicalizeMethod = 1;
+  let assemblyFormat = [{
+    $callee `(` $callee_operands `)` attr-dict `:` type($callee)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// RemoteProcedureOp
+//===----------------------------------------------------------------------===//
 
 def QCS_RemoteProcedureOp : QCS_Op<"remote_procedure", [
   AutomaticAllocationScope, CallableOpInterface,
@@ -418,6 +650,8 @@ def QCS_RemoteProcedureOp : QCS_Op<"remote_procedure", [
                        OptionalAttr<StrAttr>:$sym_visibility,
                        OptionalAttr<DictArrayAttr>:$arg_attrs,
                        OptionalAttr<DictArrayAttr>:$res_attrs);
+
+  //let results = (outs FunctionType);
   let regions = (region AnyRegion:$body);
 
   let builders = [OpBuilder<(ins
@@ -490,11 +724,19 @@ def QCS_RemoteProcedureOp : QCS_Op<"remote_procedure", [
     //===------------------------------------------------------------------===//
 
     bool isDeclaration() { return isExternal(); }
+
+
   }];
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
 
 }
+
+
+
+//===----------------------------------------------------------------------===//
+// ReturnOp
+//===----------------------------------------------------------------------===//
 
 def QCS_ReturnOp : QCS_Op<"return", [Pure, Terminator, ReturnLike]>,
     Arguments<(ins Variadic<AnyClassical>:$operands)>, Results<(outs)> {

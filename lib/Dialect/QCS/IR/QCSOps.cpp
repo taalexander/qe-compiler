@@ -27,8 +27,10 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/FunctionImplementation.h"
 #include "mlir/IR/IRMapping.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Support/LogicalResult.h"
 
@@ -176,10 +178,6 @@ ParameterType ParameterLoadOp::getInitialValue(
 }
 
 //===----------------------------------------------------------------------===//
-// End ParameterLoadOp
-//===----------------------------------------------------------------------===//
-
-//===----------------------------------------------------------------------===//
 // ParallelEndOp
 //===----------------------------------------------------------------------===//
 
@@ -190,6 +188,113 @@ mlir::ParseResult ParallelEndOp::parse(mlir::OpAsmParser &parser,
 
 void ParallelEndOp::print(mlir::OpAsmPrinter &printer) {
   printer << getOperationName();
+}
+
+//===----------------------------------------------------------------------===//
+// ExecuteRemoteProcedureCallOp
+//===----------------------------------------------------------------------===//
+
+auto ExecuteRemoteProcedureCallOp::getCalleeType() -> FunctionType {
+  return FunctionType::get(getContext(), getOperandTypes(), getResultTypes());
+}
+
+LogicalResult ExecuteRemoteProcedureCallOp::verifySymbolUses(
+    SymbolTableCollection &symbolTable) {
+
+  auto procedureAttr = (*this)->getAttrOfType<FlatSymbolRefAttr>("callee");
+  if (!procedureAttr)
+    return emitOpError("Requires a 'callee' symbol reference attribute");
+
+  auto procedure = symbolTable.lookupNearestSymbolFrom<RemoteProcedureOp>(
+      *this, procedureAttr);
+  if (!procedure)
+    return emitOpError() << "'" << procedureAttr.getValue()
+                         << "' does not reference a valid procedure";
+
+  // Verify the types match
+  auto procedureType = procedure.getFunctionType();
+
+  if (procedureType.getNumInputs() != getNumOperands())
+    return emitOpError("incorrect number of operands for the callee procedure");
+
+  for (unsigned i = 0; i != procedureType.getNumInputs(); ++i) {
+    if (getOperand(i).getType() != procedureType.getInput(i)) {
+      auto diag = emitOpError("operand type mismatch at index ") << i;
+      diag.attachNote() << "op input types: " << getOperandTypes();
+      diag.attachNote() << "function operand types: "
+                        << procedureType.getInputs();
+      return diag;
+    }
+  }
+
+  if (procedureType.getNumResults() != getNumResults())
+    return emitOpError("incorrect number of results for the callee procedure");
+
+  for (unsigned i = 0; i != procedureType.getNumResults(); ++i) {
+    if (getResult(i).getType() != procedureType.getResult(i)) {
+      auto diag = emitOpError("result type mismatch at index ") << i;
+      diag.attachNote() << "op result types: " << getResultTypes();
+      diag.attachNote() << "function result types: "
+                        << procedureType.getResults();
+      return diag;
+    }
+  }
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ConstantOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult ConstantOp::verify() {
+  StringRef fnName = getValue();
+  Type type = getType();
+
+  // Try to find the referenced function.
+  auto fn =
+      (*this)->getParentOfType<ModuleOp>().lookupSymbol<RemoteProcedureOp>(
+          fnName);
+  if (!fn)
+    return emitOpError() << "reference to undefined remote procedure '"
+                         << fnName << "'";
+
+  // Check that the referenced function has the correct type.
+  if (fn.getFunctionType() != type)
+    return emitOpError("reference to remote procedure with mismatched type");
+
+  return success();
+}
+
+OpFoldResult ConstantOp::fold(FoldAdaptor adaptor) { return getValueAttr(); }
+
+void ConstantOp::getAsmResultNames(
+    function_ref<void(Value, StringRef)> setNameFn) {
+  setNameFn(getResult(), "f");
+}
+
+bool ConstantOp::isBuildableWith(Attribute value, Type type) {
+  return llvm::isa<FlatSymbolRefAttr>(value) && llvm::isa<FunctionType>(type);
+}
+
+//===----------------------------------------------------------------------===//
+// ExecuteRemoteProcedureCallIndirectOp
+//===----------------------------------------------------------------------===//
+
+/// Fold indirect calls that have a constant function as the callee operand.
+LogicalResult ExecuteRemoteProcedureCallIndirectOp::canonicalize(
+    ExecuteRemoteProcedureCallIndirectOp indirectCall,
+    mlir::PatternRewriter &rewriter) {
+  // Check that the callee is a constant callee.
+  SymbolRefAttr calledFn;
+  if (!matchPattern(indirectCall.getCallee(), m_Constant(&calledFn)))
+    return failure();
+
+  // Replace with a direct call.
+  rewriter.replaceOpWithNewOp<ExecuteRemoteProcedureCallOp>(
+      indirectCall, calledFn, indirectCall.getResultTypes(),
+      indirectCall.getArgOperands());
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -286,8 +391,8 @@ void RemoteProcedureOp::build(OpBuilder &builder, OperationState &state,
       getArgAttrsAttrName(state.name), getResAttrsAttrName(state.name));
 }
 
-/// Clone the internal blocks and attributes from this sequence to the
-/// destination sequence.
+/// Clone the internal blocks and attributes from this procedure to the
+/// destination procedure.
 void RemoteProcedureOp::cloneInto(RemoteProcedureOp dest, IRMapping &mapper) {
   // Add the attributes of this function to dest.
   llvm::MapVector<StringAttr, Attribute> newAttrMap;
@@ -306,7 +411,7 @@ void RemoteProcedureOp::cloneInto(RemoteProcedureOp dest, IRMapping &mapper) {
   getBody().cloneInto(&dest.getBody(), mapper);
 }
 
-/// Create a deep copy of this sequence and all of its block.
+/// Create a deep copy of this procedure and all of its block.
 /// Remap any operands that use values outside of the function
 /// Using the provider mapper. Replace references to
 /// cloned sub-values with the corresponding copied value and
@@ -327,7 +432,7 @@ RemoteProcedureOp RemoteProcedureOp::clone(IRMapping &mapper) {
     newType = FunctionType::get(getContext(), inputTypes, newType.getResults());
   }
 
-  // Create the new sequence
+  // Create the new procedure
   RemoteProcedureOp newSeq =
       cast<RemoteProcedureOp>(getOperation()->cloneWithoutRegions());
   newSeq.setType(newType);
@@ -343,12 +448,6 @@ RemoteProcedureOp RemoteProcedureOp::clone() {
 }
 
 //===----------------------------------------------------------------------===//
-//
-// end RemoteProcedureOp
-
-//===----------------------------------------------------------------------===//
-
-//===----------------------------------------------------------------------===//
 // ReturnOp
 //
 // This code section was derived and modified from the LLVM project's standard
@@ -357,21 +456,21 @@ RemoteProcedureOp RemoteProcedureOp::clone() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult ReturnOp::verify() {
-  auto sequence = (*this)->getParentOfType<RemoteProcedureOp>();
-  FunctionType const sequenceType = sequence.getFunctionType();
+  auto procedure = (*this)->getParentOfType<RemoteProcedureOp>();
+  FunctionType const procedureType = procedure.getFunctionType();
 
-  auto numResults = sequenceType.getNumResults();
+  auto numResults = procedureType.getNumResults();
   // Verify number of operands match type signature
   if (numResults != getOperands().size()) {
     return emitError()
         .append("expected ", numResults, " result operands")
-        .attachNote(sequence.getLoc())
+        .attachNote(procedure.getLoc())
         .append("return type declared here");
   }
 
   int i = 0;
   for (const auto [type, operand] :
-       llvm::zip(sequenceType.getResults(), getOperands())) {
+       llvm::zip(procedureType.getResults(), getOperands())) {
     auto opType = operand.getType();
     if (type != opType) {
       return emitOpError() << "unexpected type `" << opType << "' for operand #"
@@ -381,9 +480,3 @@ LogicalResult ReturnOp::verify() {
   }
   return success();
 }
-
-//===----------------------------------------------------------------------===//
-//
-// end ReturnOp
-//
-//===----------------------------------------------------------------------===//
