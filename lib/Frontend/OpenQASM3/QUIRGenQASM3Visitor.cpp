@@ -360,6 +360,15 @@ QUIRGenQASM3Visitor::reportError(ASTBase const *location,
   return inflightDiagnostic;
 }
 
+void QUIRGenQASM3Visitor::reportUnsupported(QASM::ASTBase const *location,
+                                            const std::string &msg) {
+  auto diagnostic = reportError(location, mlir::DiagnosticSeverity::Error);
+  diagnostic << msg;
+  // Report now as the lifetime mechanism won't work with the following throw.
+  diagnostic.report();
+  throw std::runtime_error("Unrecoverable failure in parsing.");
+}
+
 void QUIRGenQASM3Visitor::visit(const ASTForStatementNode *node) {
   switchCircuit(false, getLocation(node));
 

@@ -221,7 +221,7 @@ void PrintQASM3Visitor::visit(const ASTReturnStatementNode *node) {
   } else {
     std::ostringstream oss;
     oss << "Cannot process return statement.\n";
-    throw std::runtime_error(oss.str());
+    reportUnsupported(node, oss.str());
   }
   vStream << ")";
 }

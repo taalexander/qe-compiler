@@ -151,6 +151,9 @@ public:
   mlir::LogicalResult walkAST();
 
 protected:
+  void reportUnsupported(QASM::ASTBase const *location,
+                         const std::string &msg) override;
+
   void visit(const QASM::ASTForStatementNode *) override;
 
   void visit(const QASM::ASTForLoopNode *) override;

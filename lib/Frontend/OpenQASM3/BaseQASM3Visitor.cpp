@@ -110,8 +110,8 @@ void BaseQASM3Visitor::visit(const ASTStatementList *list) {
     } else if (auto *statementNode = dynamic_cast<ASTStatementNode *>(i)) {
       visit(statementNode);
     } else {
-      throw std::runtime_error("Could not cast ASTStatement to "
-                               "ASTDeclarationNode or ASTStatementNode.\n");
+      reportUnsupported(list, "Could not cast ASTStatement to "
+                              "ASTDeclarationNode or ASTStatementNode.\n");
     }
   }
 }
@@ -171,7 +171,7 @@ void BaseQASM3Visitor::visit(const ASTSymbolTableEntry *symTableEntry) {
     std::ostringstream oss;
     oss << "Cannot process " << PrintTypeEnum(astType)
         << " declaration node.\n";
-    throw std::runtime_error(oss.str());
+    reportUnsupported(symTableEntry->GetIdentifier(), oss.str());
   }
   }
 }
@@ -262,7 +262,7 @@ void BaseQASM3Visitor::visit(const ASTStatementNode *node) {
   default:
     std::ostringstream oss;
     oss << "Cannot process " << PrintTypeEnum(astType) << " statement node.\n";
-    throw std::runtime_error(oss.str());
+    reportUnsupported(node, oss.str());
   }
 }
 
@@ -354,7 +354,7 @@ void BaseQASM3Visitor::visit(const ASTExpressionNode *node) {
   default:
     std::ostringstream oss;
     oss << "Cannot process " << PrintTypeEnum(astType) << " expression node.\n";
-    throw std::runtime_error(oss.str());
+    reportUnsupported(node, oss.str());
   }
 }
 
@@ -395,9 +395,10 @@ void BaseQASM3Visitor::visit(const ASTCastExpressionNode *node) {
     break;
 
   default:
-    llvm::errs() << "Unhandled source type "
-                 << PrintTypeEnum(node->GetCastFrom()) << "\n";
-    llvm_unreachable("unhandled source type in ASTCastExpressionNode");
+    std::ostringstream oss;
+    oss << "Unhandled source type " << PrintTypeEnum(node->GetCastFrom())
+        << " in ASTCastExpressionNode";
+    reportUnsupported(node, oss.str());
   }
 }
 
@@ -436,9 +437,10 @@ void BaseQASM3Visitor::visit(const ASTExpressionList *list) {
       dispatchVisit<ASTExpressionNode>(node);
       break;
     default:
-      llvm::errs() << "Unhandled source type "
-                   << PrintTypeEnum(node->GetASTType()) << "\n";
-      llvm_unreachable("unhandled source type in ASTExpressionList");
+      std::ostringstream oss;
+      oss << "Unhandled expression type " << PrintTypeEnum(node->GetASTType())
+          << " in ASTExpressionList";
+      reportUnsupported(node, oss.str());
     }
   }
 }
@@ -480,9 +482,10 @@ void BaseQASM3Visitor::visit(const ASTResultNode *node) {
     break;
 
   default:
-    llvm::errs() << "Unhandled result type "
-                 << PrintTypeEnum(node->GetResultType()) << "\n";
-    llvm_unreachable("unhandled result type in ASTResultNode");
+    std::ostringstream oss;
+    oss << "Unhandled result type " << PrintTypeEnum(node->GetResultType())
+        << " in ASTResultNode";
+    reportUnsupported(node, oss.str());
   }
 }
 
@@ -497,9 +500,10 @@ void BaseQASM3Visitor::visit(const ASTFunctionCallNode *node) {
     visit(node->GetKernelDefinition());
     break;
   default:
-    llvm::errs() << "Unhandled call type "
-                 << PrintTypeEnum(node->GetFunctionCallType()) << "\n";
-    llvm_unreachable("unhandled call type in ASTFunctionCallNode");
+    std::ostringstream oss;
+    oss << "Unhandled call type " << PrintTypeEnum(node->GetFunctionCallType())
+        << " in ASTFunctionCallNode";
+    reportUnsupported(node, oss.str());
   }
 }
 
