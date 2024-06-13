@@ -126,6 +126,8 @@ public:
   void visit(const QASM::ASTOperandNode *) override;
 
   void visit(const QASM::ASTUnaryOpNode *) override;
+
+  void visit(const QASM::ASTArrayNode *) override;
 };
 
 } // namespace qssc::frontend::openqasm3

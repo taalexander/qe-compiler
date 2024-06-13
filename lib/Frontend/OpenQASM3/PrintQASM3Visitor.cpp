@@ -532,9 +532,19 @@ void PrintQASM3Visitor::visit(const ASTIdentifierRefNode *node) {
 }
 
 void PrintQASM3Visitor::visit(const ASTIdentifierNode *node) {
-  const unsigned bits = node->GetBits();
   const std::string &name = node->GetName();
-  vStream << "IdentifierNode(name=" << name << ", bits=" << bits << ")";
+  vStream << "IdentifierNode(name=" << name;
+
+  if (node->IsIndexed()) {
+    // If array identifier bits contains the array index
+    const unsigned index = node->GetBits();
+    vStream << ", index=" << index;
+  } else {
+    const unsigned bits = node->GetBits();
+    vStream << ", bits=" << bits;
+  }
+
+  vStream << ")";
 }
 
 void PrintQASM3Visitor::visit(const ASTBinaryOpNode *node) {
@@ -617,11 +627,29 @@ void PrintQASM3Visitor::visit(const ASTMPComplexNode *node) {
 }
 
 void PrintQASM3Visitor::visit(const ASTAngleNode *node) {
-  std::string val = node->GetValue();
+  vStream << "AngleNode(";
+
+  if (node->IsExpression()) {
+    vStream << "value=";
+    auto *expr = node->GetExpression();
+    if (expr)
+      BaseQASM3Visitor::visit(node->GetExpression());
+    else if (node->HasImplicitConversion()) {
+      // Visit
+      BaseQASM3Visitor::visit(node->GetImplicitConversion());
+    } else {
+      // Add default value
+      vStream << "0.0";
+    }
+  } else {
+    std::string val = node->GetValue();
+    if (node->IsNan())
+      val = "0.0";
+    vStream << "value=" << val;
+  }
+
   const unsigned bits = node->GetBits();
-  if (node->IsNan())
-    val = "0.0";
-  vStream << "AngleNode(value=" << val << ", bits=" << bits << ")";
+  vStream << ", bits=" << bits << ")";
 }
 
 void PrintQASM3Visitor::visit(const ASTBoolNode *node) {
@@ -716,6 +744,13 @@ void PrintQASM3Visitor::visit(const QASM::ASTOperandNode *node) {
     BaseQASM3Visitor::visit(node->GetExpression());
   }
   vStream << ")\n";
+}
+
+void PrintQASM3Visitor::visit(const QASM::ASTArrayNode *node) {
+  vStream << "ArrayNode(name=" << node->GetName() << ", ";
+  vStream << "size=" << node->Size() << ", ";
+  vStream << "elementType=" << PrintTypeEnum(node->GetElementType()) << ", ";
+  vStream << "elementSize=" << node->GetElementSize() << ")";
 }
 
 } // namespace qssc::frontend::openqasm3

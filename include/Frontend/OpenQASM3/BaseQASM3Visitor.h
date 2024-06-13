@@ -18,6 +18,7 @@
 #define VISITOR_BASE_VISITOR_H
 
 #include <qasm/AST/AST.h>
+#include <qasm/AST/ASTArray.h>
 #include <qasm/AST/ASTBarrier.h>
 #include <qasm/AST/ASTCastExpr.h>
 #include <qasm/AST/ASTDelay.h>
@@ -41,8 +42,6 @@ class BaseQASM3Visitor {
 protected:
   QASM::ASTStatementList *statementList;
 
-  bool unrecoverableErrorEncountered = false;
-
 public:
   BaseQASM3Visitor(QASM::ASTStatementList *sList) : statementList(sList) {}
 
@@ -56,10 +55,6 @@ public:
 
   template <typename T>
   void dispatchVisit(const QASM::ASTBase *node) {
-    // End visit if an unrecoverable error has been encountered
-    if (unrecoverableErrorEncountered)
-      return;
-
     const T *specificNode = dynamic_cast<const T *>(node);
     assert(specificNode && "Could not cast ASTNode to specific node type");
     visit(specificNode);
@@ -67,10 +62,6 @@ public:
 
   template <typename T>
   void dispatchSymbolTableEntryVisit(const QASM::ASTSymbolTableEntry *entry) {
-    // End visit if an unrecoverable error has been encountered
-    if (unrecoverableErrorEncountered)
-      return;
-
     const T *specificValue = entry->GetValue()->GetValue<T *>();
     assert(specificValue && "Could not cast with GetValue to specific type");
     visit(specificValue);
@@ -90,7 +81,6 @@ public:
 
   virtual void reportUnsupported(QASM::ASTBase const *location,
                                  const std::string &msg) {
-    unrecoverableErrorEncountered = true;
     throw std::runtime_error(msg);
   }
 
@@ -197,6 +187,8 @@ public:
   virtual void visit(const QASM::ASTOperandNode *) = 0;
 
   virtual void visit(const QASM::ASTUnaryOpNode *) = 0;
+
+  virtual void visit(const QASM::ASTArrayNode *) = 0;
 };
 
 } // namespace qssc::frontend::openqasm3

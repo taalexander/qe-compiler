@@ -167,6 +167,26 @@ void BaseQASM3Visitor::visit(const ASTSymbolTableEntry *symTableEntry) {
     dispatchSymbolTableEntryVisit<ASTQubitNode>(symTableEntry);
     break;
 
+  case ASTTypeAngleArray:
+  case ASTTypeArray:
+  case ASTTypeBoolArray:
+  case ASTTypeCBitArray:
+  case ASTTypeCBitNArray:
+  case ASTTypeDurationArray:
+  case ASTTypeFloatArray:
+  case ASTTypeInvalidArray:
+  case ASTTypeIntArray:
+  case ASTTypeUIntArray:
+  case ASTTypeLengthArray:
+  case ASTTypeMPComplexArray:
+  case ASTTypeMPDecimalArray:
+  case ASTTypeMPIntegerArray:
+  case ASTTypeMPUIntegerArray:
+  case ASTTypeQubitArray:
+  case ASTTypeQubitNArray:
+    dispatchSymbolTableEntryVisit<ASTArrayNode>(symTableEntry);
+    break;
+
   default: {
     std::ostringstream oss;
     oss << "Cannot process " << PrintTypeEnum(astType)
@@ -349,6 +369,10 @@ void BaseQASM3Visitor::visit(const ASTExpressionNode *node) {
 
   case ASTTypeMPComplex:
     dispatchVisit<ASTMPComplexNode>(node);
+    break;
+
+  case ASTTypeIdentifierRef:
+    dispatchVisit<ASTIdentifierNode>(node);
     break;
 
   default:

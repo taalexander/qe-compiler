@@ -2488,4 +2488,9 @@ void QUIRGenQASM3Visitor::switchCircuit(bool buildInCircuit,
     startCircuit(location);
 }
 
+ExpressionValueType
+QUIRGenQASM3Visitor::visit_(const QASM::ASTArrayNode *node) {
+  return createVoidValue(node);
+}
+
 } // namespace qssc::frontend::openqasm3

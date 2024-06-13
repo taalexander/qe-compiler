@@ -315,6 +315,9 @@ protected:
   }
   ExpressionValueType visit_(const QASM::ASTUnaryOpNode *);
 
+  void visit(const QASM::ASTArrayNode *node) override { visitWithReturn(node); }
+  ExpressionValueType visit_(const QASM::ASTArrayNode *);
+
 private:
   ExpressionValueType handleAssign(const QASM::ASTBinaryOpNode *);
   ExpressionValueType handleAssign(const QASM::ASTBinaryOpNode *, mlir::Value);
